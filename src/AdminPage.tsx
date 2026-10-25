@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowLeft, Check, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShoppingBag, X } from 'lucide-react'
+import { ArrowLeft, Check, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShoppingBag, Users, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import type { FittingRequest, Product, SupportConversation, SupportMessage } from './types'
+import type { CustomerProfile, FittingRequest, Product, SupportConversation, SupportMessage } from './types'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { getLocalAdminSnapshot, readLocalConversations, readLocalMessages, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalConversations, writeLocalMessages, writeLocalProducts, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
 import './Admin.css'
 
-type AdminSection = 'overview' | 'products' | 'fittings' | 'support' | 'settings'
+type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'support' | 'settings'
 type ProductDraft = {
   id: string
   name: string
@@ -53,6 +53,7 @@ function currentTimestamp() {
 const sections: { id: AdminSection; label: string; icon: typeof Package }[] = [
   { id: 'overview', label: 'Overview', icon: ShoppingBag },
   { id: 'products', label: 'Products', icon: Package },
+  { id: 'customers', label: 'Customers', icon: Users },
   { id: 'fittings', label: 'Fitting requests', icon: Scissors },
   { id: 'support', label: 'Live support', icon: Headset },
   { id: 'settings', label: 'Settings', icon: Settings },
@@ -91,6 +92,8 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const [storedRequests, setRequests] = useState<FittingRequest[]>(() => localMode ? localSnapshot.requests : [])
   const [storedConversations, setConversations] = useState<SupportConversation[]>(() => localMode ? localSnapshot.conversations : [])
   const [storedSupportMessages, setSupportMessages] = useState<SupportMessage[]>(() => localMode ? localSnapshot.messages : [])
+  const [customerProfiles, setCustomerProfiles] = useState<CustomerProfile[]>([])
+  const [customerLoadError, setCustomerLoadError] = useState('')
   const [selectedConversationId, setSelectedConversationId] = useState(() => searchParams.get('conversation') ?? '')
   const [reply, setReply] = useState('')
   const [storedWhatsAppNumber, setWhatsAppNumber] = useState(() => localMode ? localSnapshot.whatsappNumber : '')
@@ -147,13 +150,20 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         return
       }
       if (!supabase) return
-      const [productResult, requestResult, conversationResult, messageResult, settingsResult] = await Promise.all([
+      const [productResult, requestResult, conversationResult, messageResult, settingsResult, customerResult] = await Promise.all([
         supabase.from('products').select('*').order('name'),
         supabase.from('fitting_requests').select('*').order('created_at', { ascending: false }),
         supabase.from('support_conversations').select('*').order('updated_at', { ascending: false }),
         supabase.from('support_messages').select('*').order('created_at'),
         supabase.from('business_settings').select('value').eq('key', 'whatsapp_number').maybeSingle(),
+        supabase.from('customer_profiles').select('id,email,full_name,created_at').order('created_at', { ascending: false }),
       ])
+      if (customerResult.error) {
+        setCustomerLoadError(customerResult.error.message)
+      } else {
+        setCustomerProfiles((customerResult.data ?? []) as CustomerProfile[])
+        setCustomerLoadError('')
+      }
       const loadError = productResult.error ?? requestResult.error ?? conversationResult.error ?? messageResult.error ?? settingsResult.error
       if (loadError) {
         setError(loadError.message)
@@ -210,6 +220,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_conversations' }, () => { void refreshData({ silent: true }) })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => { void refreshData({ silent: true }) })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'business_settings' }, () => { void refreshData({ silent: true }) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_profiles' }, () => { void refreshData({ silent: true }) })
       .subscribe(handleRealtimeStatus)
     return () => { void client.removeChannel(channel) }
   }, [localMode, refreshData, session])
@@ -566,6 +577,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
             <div className="admin-stat-grid">
               <article><span className="admin-stat-icon"><Package size={18} /></span><p>Products</p><strong>{products.length}</strong><small>{products.filter((product) => product.active !== false).length} active in storefront</small></article>
               <article><span className="admin-stat-icon"><Scissors size={18} /></span><p>Fitting requests</p><strong>{requests.length}</strong><small>{requests.filter((request) => request.status === 'new').length} new to review</small></article>
+              <article><span className="admin-stat-icon"><Users size={18} /></span><p>Customers</p><strong>{localMode ? '—' : customerProfiles.length}</strong><small>{localMode ? 'Available with Supabase' : 'Registered customer accounts'}</small></article>
               <article><span className="admin-stat-icon"><Headset size={18} /></span><p>Live support</p><strong>{conversations.filter((item) => item.status === 'open').length}</strong><small>{supportMessages.length} messages across all chats</small></article>
               <article><span className="admin-stat-icon"><ShoppingBag size={18} /></span><p>Collection value</p><strong>{money.format(products.filter((product) => product.active !== false).reduce((total, product) => total + product.price, 0))}</strong><small>Combined price of active designs</small></article>
             </div>
@@ -602,6 +614,18 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
 
         {section === 'fittings' && (
           <section className="admin-content"><div className="admin-panel"><div className="admin-panel-heading"><div><p className="admin-kicker">Customer appointments</p><h2>{requests.length} fitting requests</h2></div></div>{requests.length === 0 ? <p className="admin-empty">No fitting requests yet. Customer submissions will show up here.</p> : <div className="admin-table-wrap"><table className="admin-table admin-fitting-table"><thead><tr><th>Customer</th><th>Occasion & notes</th><th>Received</th><th>Status</th></tr></thead><tbody>{requests.map((request) => <tr key={request.id}><td><strong>{request.name}</strong><a href={`mailto:${request.email}`}>{request.email}</a><a href={`tel:${request.phone}`}>{request.phone}</a></td><td><strong>{request.occasion}</strong><p>{request.notes || 'No additional notes'}</p></td><td>{formatAdminDate(request.created_at)}</td><td><select className="admin-status-select" value={request.status} onChange={(event) => { const status = event.target.value; if (status === 'new' || status === 'contacted' || status === 'completed') void updateRequestStatus(request.id, status) }} aria-label={`Update request status for ${request.name}`}><option value="new">New</option><option value="contacted">Contacted</option><option value="completed">Completed</option></select></td></tr>)}</tbody></table></div>}</div></section>
+        )}
+
+        {section === 'customers' && (
+          <section className="admin-content">
+            <div className="admin-panel">
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Customer accounts</p><h2>{customerProfiles.length} registered customers</h2></div></div>
+              {localMode ? <p className="admin-empty">Customer accounts require Supabase and are not available in browser demo mode.</p>
+                : customerLoadError ? <p className="admin-alert admin-section-alert" role="alert">Could not load customer accounts. Apply the latest supabase/schema.sql in the Supabase SQL editor, then refresh. Details: {customerLoadError}</p>
+                  : customerProfiles.length === 0 ? <p className="admin-empty">No registered customer accounts yet. New registrations will appear here.</p>
+                    : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Name</th><th>Email</th><th>Registered</th></tr></thead><tbody>{customerProfiles.map((customer) => <tr key={customer.id}><td>{customer.full_name || 'Customer'}</td><td><a href={`mailto:${customer.email}`}>{customer.email}</a></td><td>{formatAdminDate(customer.created_at)}</td></tr>)}</tbody></table></div>}
+            </div>
+          </section>
         )}
 
         {section === 'support' && (

@@ -272,7 +272,7 @@
   .admin-brand-mark { width: 34px; height: 34px; font-size: 23px; }
   .admin-sidebar-brand small { font-size: 7px; }
   .admin-sidebar-label, .admin-sidebar .admin-back-link, .admin-sidebar .admin-signout { display: none; }
-  .admin-sidebar nav { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
+  .admin-sidebar nav { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
   .admin-nav-item { min-height: 47px; padding: 3px 2px; align-content: center; justify-items: center; gap: 3px; font-size: 7px; line-height: 1.15; text-align: center; }
   .admin-nav-item svg { width: 15px; }
   .admin-nav-count { min-width: 15px; height: 15px; margin: 0; font-size: 7px; }

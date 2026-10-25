@@ -9,7 +9,10 @@
 .main-nav { display: flex; justify-content: center; gap: clamp(18px, 3vw, 42px); white-space: nowrap; }
 .main-nav a { color: #555149; font-size: 12px; text-decoration: none; transition: color .2s; }
 .main-nav a:hover, .main-nav a.active { color: var(--moss); }
-.bag-button { justify-self: end; display: flex; align-items: center; gap: 9px; padding: 9px 0 9px 12px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
+.header-actions { justify-self: end; display: flex; align-items: center; gap: clamp(12px, 2vw, 24px); }
+.account-link, .bag-button { display: inline-flex; align-items: center; gap: 8px; padding: 9px 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 12px; text-decoration: none; cursor: pointer; }
+.account-link:hover { color: var(--moss); }
+.bag-button { gap: 9px; padding-left: 4px; }
 .bag-count { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--acid); font-size: 10px; }
 .mobile-menu-toggle { display: none; }
 .hero { min-height: 610px; height: min(700px, calc(100svh - 116px)); display: grid; grid-template-columns: 47% 53%; position: relative; background: var(--pale); }
@@ -205,7 +208,10 @@
   .main-nav.is-open { display: flex; }
   .main-nav a { padding: 14px 0; border-bottom: 1px solid var(--line); }
   .main-nav a:last-child { border-bottom: 0; }
-  .bag-button { gap: 6px; }
+  .header-actions { gap: 13px; }
+  .account-link, .bag-button { gap: 5px; font-size: 10px; }
+  .account-link span { display: none; }
+  .bag-button { gap: 5px; }
   .hero { height: auto; min-height: initial; grid-template-columns: 1fr; }
   .hero-copy { min-height: 400px; padding: 54px 8% 23px; }
   .hero h1 { font-size: 51px; }

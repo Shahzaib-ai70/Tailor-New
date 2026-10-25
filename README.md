@@ -9,6 +9,7 @@ A responsive storefront prototype for Pakistani men's shalwar kameez, built with
 - `/shop/:productId` individual design details and size selection
 - `/craft` stitching and design approach
 - `/fitting` appointment request form
+- `/account` customer registration and sign-in
 
 ## Run locally
 
@@ -25,9 +26,12 @@ Open `/admin` to manage product listings, fitting requests, live customer chats,
 2. Run [`supabase/schema.sql`](./supabase/schema.sql) in the Supabase SQL editor.
 3. Create an admin user in Supabase Auth and assign `app_metadata.role` to `admin` using a trusted server-side method. Never put a service-role key in the Vite environment.
 4. Enable anonymous sign-ins in Supabase Auth settings for customer live chat.
-5. Restart the dev server. In Admin > Settings, add the WhatsApp business number with country code and digits only.
+5. Enable email sign-ups and add the storefront domain plus its `/account` redirect URL to Supabase Auth's allowed redirect URLs.
+6. Restart the dev server. In Admin > Settings, add the WhatsApp business number with country code and digits only.
 
-With Supabase configured, the storefront reads active products, saves fitting requests, and supports persistent real-time customer conversations. Supabase Realtime is enabled for catalog, appointments, support messages, and WhatsApp settings. Row-level security restricts management to admins and limits customers to their own anonymous support conversations.
+With Supabase configured, customers can register and sign in at `/account`. New accounts are synchronized from Supabase Auth to `customer_profiles` by a database trigger; admins can view customer names, emails, and registration dates in Admin > Customers. Customers can read only their own profile, and only admins can list profiles. The storefront reads active products, saves fitting requests, and supports persistent real-time customer conversations. Supabase Realtime is enabled for catalog, appointments, support messages, WhatsApp settings, and customer profiles. Row-level security restricts management to admins and limits customers to their own anonymous support conversations.
+
+When updating an existing Supabase project, re-run the latest `supabase/schema.sql` in the SQL editor to install the customer-profile table, trigger, backfill, policies, and Realtime publication. Customer profile emails are exposed to authenticated admins only—never use a service-role key in the browser.
 
 ## Checks
 

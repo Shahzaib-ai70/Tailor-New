@@ -49,6 +49,58 @@ create table if not exists public.business_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.customer_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null default '',
+  full_name text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.sync_customer_profile()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.customer_profiles (id, email, full_name, created_at)
+  values (
+    new.id,
+    coalesce(new.email, ''),
+    coalesce(nullif(pg_catalog.btrim(new.raw_user_meta_data ->> 'full_name'), ''), ''),
+    new.created_at
+  )
+  on conflict (id) do update
+    set email = excluded.email,
+        full_name = case
+          when excluded.full_name <> '' then excluded.full_name
+          else public.customer_profiles.full_name
+        end;
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_customer_profile on auth.users;
+create trigger sync_customer_profile
+  after insert or update on auth.users
+  for each row execute function public.sync_customer_profile();
+
+revoke all on function public.sync_customer_profile() from public, anon, authenticated;
+
+insert into public.customer_profiles (id, email, full_name, created_at)
+select
+  users.id,
+  coalesce(users.email, ''),
+  coalesce(nullif(pg_catalog.btrim(users.raw_user_meta_data ->> 'full_name'), ''), ''),
+  users.created_at
+from auth.users as users
+on conflict (id) do update
+  set email = excluded.email,
+      full_name = case
+        when excluded.full_name <> '' then excluded.full_name
+        else public.customer_profiles.full_name
+      end;
+
 create unique index if not exists support_conversations_one_open_per_customer
   on public.support_conversations (customer_id) where status = 'open';
 
@@ -57,6 +109,20 @@ alter table public.fitting_requests enable row level security;
 alter table public.support_conversations enable row level security;
 alter table public.support_messages enable row level security;
 alter table public.business_settings enable row level security;
+alter table public.customer_profiles enable row level security;
+
+drop policy if exists "Customers can view their own profile" on public.customer_profiles;
+create policy "Customers can view their own profile"
+  on public.customer_profiles for select to authenticated
+  using (id = auth.uid());
+
+drop policy if exists "Admins can view customer profiles" on public.customer_profiles;
+create policy "Admins can view customer profiles"
+  on public.customer_profiles for select to authenticated
+  using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+
+grant select on public.customer_profiles to authenticated;
+revoke all on public.customer_profiles from anon;
 
 drop policy if exists "Public can view active products" on public.products;
 create policy "Public can view active products"
@@ -188,6 +254,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'business_settings'
   ) then
     alter publication supabase_realtime add table public.business_settings;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'customer_profiles'
+  ) then
+    alter publication supabase_realtime add table public.customer_profiles;
   end if;
 end
 $$;
