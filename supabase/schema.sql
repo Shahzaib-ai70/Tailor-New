@@ -63,6 +63,12 @@ security definer
 set search_path = ''
 as $$
 begin
+  if coalesce(new.is_anonymous, false)
+    or coalesce(new.raw_app_meta_data ->> 'role', '') = 'admin' then
+    delete from public.customer_profiles where id = new.id;
+    return new;
+  end if;
+
   insert into public.customer_profiles (id, email, full_name, created_at)
   values (
     new.id,
@@ -94,12 +100,22 @@ select
   coalesce(nullif(pg_catalog.btrim(users.raw_user_meta_data ->> 'full_name'), ''), ''),
   users.created_at
 from auth.users as users
+where users.is_anonymous is not true
+  and coalesce(users.raw_app_meta_data ->> 'role', '') <> 'admin'
 on conflict (id) do update
   set email = excluded.email,
       full_name = case
         when excluded.full_name <> '' then excluded.full_name
         else public.customer_profiles.full_name
       end;
+
+delete from public.customer_profiles as profiles
+using auth.users as users
+where profiles.id = users.id
+  and (
+    coalesce(users.is_anonymous, false)
+    or coalesce(users.raw_app_meta_data ->> 'role', '') = 'admin'
+  );
 
 create unique index if not exists support_conversations_one_open_per_customer
   on public.support_conversations (customer_id) where status = 'open';

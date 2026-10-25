@@ -512,6 +512,20 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     ? supportMessages.filter((item) => item.conversation_id === selectedConversation.id)
     : []
 
+  if (localMode && !import.meta.env.DEV) {
+    return (
+      <div className="admin-gate">
+        <div className="admin-gate-card">
+          <span className="admin-brand-mark">M</span>
+          <p className="admin-kicker">Mian Tailor And Design</p>
+          <h1>Admin portal unavailable</h1>
+          <p>The admin area is disabled until Supabase is configured for this site.</p>
+          <Link className="admin-back-link" to="/"><ArrowLeft size={15} /> Back to storefront</Link>
+        </div>
+      </div>
+    )
+  }
+
   if (!localMode && !authReady) {
     return <div className="admin-loading">Checking admin session…</div>
   }

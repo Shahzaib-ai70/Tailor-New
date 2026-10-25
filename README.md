@@ -20,7 +20,7 @@ npm run dev
 
 ## Admin panel
 
-Open `/admin` to manage product listings, fitting requests, live customer chats, and the WhatsApp contact number. Without Supabase, the panel works in browser demo mode: edits, fitting requests, WhatsApp settings, and chats persist in this browser and synchronize between tabs on this device. Browser mode is not a shared production database or an access-controlled admin account.
+Open `/admin` to manage product listings, customer accounts, fitting requests, live customer chats, and the WhatsApp contact number. Admin is not linked in the public storefront; the route requires a Supabase admin login in production. Without Supabase, the panel is available only during local development as a browser demo and is disabled in production builds.
 
 1. Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 2. Run [`supabase/schema.sql`](./supabase/schema.sql) in the Supabase SQL editor.
@@ -29,7 +29,7 @@ Open `/admin` to manage product listings, fitting requests, live customer chats,
 5. Enable email sign-ups and add the storefront domain plus its `/account` redirect URL to Supabase Auth's allowed redirect URLs.
 6. Restart the dev server. In Admin > Settings, add the WhatsApp business number with country code and digits only.
 
-With Supabase configured, customers can register and sign in at `/account`. New accounts are synchronized from Supabase Auth to `customer_profiles` by a database trigger; admins can view customer names, emails, and registration dates in Admin > Customers. Customers can read only their own profile, and only admins can list profiles. The storefront reads active products, saves fitting requests, and supports persistent real-time customer conversations. Supabase Realtime is enabled for catalog, appointments, support messages, WhatsApp settings, and customer profiles. Row-level security restricts management to admins and limits customers to their own anonymous support conversations.
+With Supabase configured, customers can register and sign in at `/account`. Supabase Auth stores customer credentials; a database trigger permanently syncs registered customer names, emails, and signup dates to `customer_profiles` for Admin > Customers. Admin accounts and anonymous support-chat sessions are excluded from the customer directory. Customers can read only their own profile, and only admins can list customer profiles. The storefront reads active products, saves fitting requests, and supports persistent real-time customer conversations. Supabase Realtime is enabled for catalog, appointments, support messages, WhatsApp settings, and customer profiles. Row-level security restricts management to admins and limits customers to their own anonymous support conversations.
 
 When updating an existing Supabase project, re-run the latest `supabase/schema.sql` in the SQL editor to install the customer-profile table, trigger, backfill, policies, and Realtime publication. Customer profile emails are exposed to authenticated admins only—never use a service-role key in the browser.
 
