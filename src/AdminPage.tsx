@@ -94,6 +94,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const [selectedConversationId, setSelectedConversationId] = useState(() => searchParams.get('conversation') ?? '')
   const [reply, setReply] = useState('')
   const [storedWhatsAppNumber, setWhatsAppNumber] = useState(() => localMode ? localSnapshot.whatsappNumber : '')
+  const [whatsAppDraft, setWhatsAppDraft] = useState<string | null>(null)
   const [loading, setLoading] = useState(!localMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -107,7 +108,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const requests = localMode ? localSnapshot.requests : storedRequests
   const conversations = localMode ? localSnapshot.conversations : storedConversations
   const supportMessages = localMode ? localSnapshot.messages : storedSupportMessages
-  const whatsAppNumber = localMode ? localSnapshot.whatsappNumber : storedWhatsAppNumber
+  const whatsAppNumber = whatsAppDraft ?? (localMode ? localSnapshot.whatsappNumber : storedWhatsAppNumber)
 
   function navigateSection(nextSection: AdminSection) {
     setSection(nextSection)
@@ -485,6 +486,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         if (saveError) throw saveError
       }
       setWhatsAppNumber(number)
+      setWhatsAppDraft(null)
       setNotice('Customer service settings saved.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save customer service settings.')
@@ -640,7 +642,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               <div className="admin-panel-heading"><div><p className="admin-kicker">Customer service</p><h2>WhatsApp contact</h2></div></div>
               <div className="admin-settings-content">
                 <p>Set the business WhatsApp number customers should message. Include the country code, digits only (for example, 923001234567). The storefront chat panel will open a WhatsApp conversation with a greeting.</p>
-                <label>WhatsApp Business number<input inputMode="tel" autoComplete="tel" value={whatsAppNumber} onChange={(event) => setWhatsAppNumber(event.target.value)} placeholder="923001234567" /></label>
+                <label>WhatsApp Business number<input inputMode="tel" autoComplete="tel" value={whatsAppNumber} onChange={(event) => setWhatsAppDraft(event.target.value)} placeholder="923001234567" /></label>
                 <div className="admin-form-actions"><button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save customer service settings'}</button></div>
               </div>
             </form>
