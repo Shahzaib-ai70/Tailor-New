@@ -25,6 +25,7 @@ npm run dev
 ```
 
 The Vite development server forwards `/api` requests to the account API on `127.0.0.1:3001`.
+Node.js 22.5 or newer is required for the built-in SQLite account store.
 
 ## Admin panel
 
