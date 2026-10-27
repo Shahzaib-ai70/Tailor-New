@@ -12,7 +12,14 @@ let origin
 
 before(async () => {
   directory = mkdtempSync(join(tmpdir(), 'mian-account-test-'))
-  const accountApp = createAccountApp({ dbPath: join(directory, 'accounts.sqlite') })
+  const accountApp = createAccountApp({
+    dbPath: join(directory, 'accounts.sqlite'),
+    verifyAdminToken: async (token) => {
+      if (token === 'manager-token') return { app_metadata: { role: 'admin' } }
+      if (token === 'customer-token') return { app_metadata: { role: 'customer' } }
+      return null
+    },
+  })
   database = accountApp.database
   server = accountApp.app.listen(0, '127.0.0.1')
   await new Promise((resolve, reject) => {
@@ -61,6 +68,27 @@ test('duplicate registration and invalid login are rejected', async () => {
     body: JSON.stringify({ email: 'test@example.com', password: 'incorrect-password' }),
   })
   assert.equal(wrongPassword.status, 401)
+})
+
+test('only an authenticated admin can view registered customer accounts', async () => {
+  const unauthenticated = await fetch(`${origin}/api/admin/customers`)
+  assert.equal(unauthenticated.status, 401)
+
+  const customer = await fetch(`${origin}/api/admin/customers`, {
+    headers: { Authorization: 'Bearer customer-token' },
+  })
+  assert.equal(customer.status, 403)
+
+  const manager = await fetch(`${origin}/api/admin/customers`, {
+    headers: { Authorization: 'Bearer manager-token' },
+  })
+  assert.equal(manager.status, 200)
+  const result = await manager.json()
+  assert.deepEqual(result.customers.map(({ fullName, email }) => ({ fullName, email })), [
+    { fullName: 'Test Customer', email: 'test@example.com' },
+  ])
+  assert.ok(result.customers[0].createdAt)
+  assert.ok(!JSON.stringify(result).includes('password_hash'))
 })
 
 test('logout clears the session and cross-origin mutations are rejected', async () => {

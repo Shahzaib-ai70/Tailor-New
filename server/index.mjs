@@ -1,10 +1,13 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { DatabaseSync } from 'node:sqlite'
+import { createClient } from '@supabase/supabase-js'
+
+if (existsSync(resolve('.env'))) process.loadEnvFile(resolve('.env'))
 
 const scrypt = promisify(scryptCallback)
 const sessionDurationSeconds = 60 * 60 * 24 * 30
@@ -64,7 +67,10 @@ function allowSameOrigin(request, response, next) {
   next()
 }
 
-export function createAccountApp({ dbPath = process.env.AUTH_DB_PATH ?? './data/accounts.sqlite' } = {}) {
+export function createAccountApp({
+  dbPath = process.env.AUTH_DB_PATH ?? './data/accounts.sqlite',
+  verifyAdminToken,
+} = {}) {
   const databasePath = resolve(dbPath)
   mkdirSync(dirname(databasePath), { recursive: true })
   const database = new DatabaseSync(databasePath)
@@ -84,6 +90,11 @@ export function createAccountApp({ dbPath = process.env.AUTH_DB_PATH ?? './data/
     );
     CREATE INDEX IF NOT EXISTS customer_sessions_expiry ON customer_sessions(expires_at);
   `)
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
+  const supabaseAuth = supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    : null
 
   const app = express()
   app.disable('x-powered-by')
@@ -137,6 +148,42 @@ export function createAccountApp({ dbPath = process.env.AUTH_DB_PATH ?? './data/
     const account = token ? findSessionAccount.get(hashToken(token), Date.now()) : null
     if (!account && token) clearSessionCookie(response)
     response.json({ user: account ? safeUser(account) : null })
+  })
+
+  app.get('/api/admin/customers', async (request, response, next) => {
+    const token = request.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]
+    if (!token) {
+      response.status(401).json({ error: 'Admin sign-in is required to view customer accounts.' })
+      return
+    }
+    if (!verifyAdminToken && !supabaseAuth) {
+      response.status(503).json({ error: 'Customer directory requires Supabase admin authentication to be configured on the account service.' })
+      return
+    }
+    try {
+      const user = verifyAdminToken
+        ? await verifyAdminToken(token)
+        : await supabaseAuth.auth.getUser(token).then(({ data, error }) => {
+            if (error) return null
+            return data.user
+          })
+      if (!user) {
+        response.status(401).json({ error: 'Admin session is invalid or expired. Sign in again.' })
+        return
+      }
+      if (user.app_metadata?.role !== 'admin') {
+        response.status(403).json({ error: 'Admin access is required to view customer accounts.' })
+        return
+      }
+      const customers = database.prepare(`
+        SELECT id, full_name AS fullName, email, created_at AS createdAt
+        FROM customer_accounts
+        ORDER BY datetime(created_at) DESC, id DESC
+      `).all()
+      response.json({ customers })
+    } catch (error) {
+      next(error)
+    }
   })
 
   app.post('/api/account/register', allowSameOrigin, rateLimit, async (request, response, next) => {

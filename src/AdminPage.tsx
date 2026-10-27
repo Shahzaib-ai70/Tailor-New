@@ -9,6 +9,8 @@ import { getLocalAdminSnapshot, readLocalConversations, readLocalMessages, readL
 import './Admin.css'
 
 type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'support' | 'settings'
+type AccountDirectoryCustomer = { id: number; fullName: string; email: string; createdAt: string }
+type AccountDirectoryResponse = { customers?: AccountDirectoryCustomer[]; error?: string }
 type ProductDraft = {
   id: string
   name: string
@@ -44,7 +46,7 @@ function formatAdminDateTime(value: string) {
 }
 
 function formatAdminDate(value: string) {
-  return value.split('T')[0]
+  return value.split(/[T ]/)[0]
 }
 
 function currentTimestamp() {
@@ -158,12 +160,35 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         supabase.from('business_settings').select('value').eq('key', 'whatsapp_number').maybeSingle(),
         supabase.from('customer_profiles').select('id,email,full_name,created_at').order('created_at', { ascending: false }),
       ])
-      if (customerResult.error) {
-        setCustomerLoadError(customerResult.error.message)
-      } else {
-        setCustomerProfiles((customerResult.data ?? []) as CustomerProfile[])
-        setCustomerLoadError('')
+      let directoryError = ''
+      let directoryCustomers: AccountDirectoryCustomer[] = []
+      try {
+        const directoryResponse = await fetch('/api/admin/customers', {
+          headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+        })
+        const directoryResult = await directoryResponse.json() as AccountDirectoryResponse
+        if (!directoryResponse.ok) {
+          directoryError = directoryResult.error ?? 'Could not load website registrations.'
+        } else {
+          directoryCustomers = directoryResult.customers ?? []
+        }
+      } catch (directoryLoadError) {
+        directoryError = directoryLoadError instanceof Error ? directoryLoadError.message : 'Could not load website registrations.'
       }
+      const customerDirectory = new Map<string, CustomerProfile>()
+      for (const profile of customerResult.data ?? []) {
+        customerDirectory.set(profile.email.toLowerCase(), profile as CustomerProfile)
+      }
+      for (const customer of directoryCustomers) {
+        customerDirectory.set(customer.email.toLowerCase(), {
+          id: `account-${customer.id}`,
+          email: customer.email,
+          full_name: customer.fullName,
+          created_at: customer.createdAt,
+        })
+      }
+      setCustomerProfiles([...customerDirectory.values()].sort((a, b) => b.created_at.localeCompare(a.created_at)))
+      setCustomerLoadError([customerResult.error?.message, directoryError].filter(Boolean).join(' · '))
       const loadError = productResult.error ?? requestResult.error ?? conversationResult.error ?? messageResult.error ?? settingsResult.error
       if (loadError) {
         setError(loadError.message)
@@ -179,7 +204,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     } finally {
       setLoading(false)
     }
-  }, [localMode, starterProducts])
+  }, [localMode, session, starterProducts])
 
   useEffect(() => {
     if (!supabase) return
@@ -210,6 +235,12 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     if (localMode || !supabase || session?.user.app_metadata.role !== 'admin') return
     void Promise.resolve().then(() => refreshData({ silent: true }))
   }, [localMode, refreshData, session])
+
+  useEffect(() => {
+    if (localMode || section !== 'customers' || session?.user.app_metadata.role !== 'admin') return
+    const interval = window.setInterval(() => { void refreshData({ silent: true }) }, 30_000)
+    return () => window.clearInterval(interval)
+  }, [localMode, refreshData, section, session])
 
   useEffect(() => {
     if (localMode || !supabase || session?.user.app_metadata.role !== 'admin') return
@@ -518,8 +549,8 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         <div className="admin-gate-card">
           <span className="admin-brand-mark">M</span>
           <p className="admin-kicker">Mian Tailor And Design</p>
-          <h1>Admin portal unavailable</h1>
-          <p>The admin area is disabled until Supabase is configured for this site.</p>
+          <h1>Admin setup required</h1>
+          <p>The production admin panel requires Supabase authentication. Configure the site and account service with the Supabase project, then sign in with an admin account.</p>
           <Link className="admin-back-link" to="/"><ArrowLeft size={15} /> Back to storefront</Link>
         </div>
       </div>
@@ -591,7 +622,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
             <div className="admin-stat-grid">
               <article><span className="admin-stat-icon"><Package size={18} /></span><p>Products</p><strong>{products.length}</strong><small>{products.filter((product) => product.active !== false).length} active in storefront</small></article>
               <article><span className="admin-stat-icon"><Scissors size={18} /></span><p>Fitting requests</p><strong>{requests.length}</strong><small>{requests.filter((request) => request.status === 'new').length} new to review</small></article>
-              <article><span className="admin-stat-icon"><Users size={18} /></span><p>Customers</p><strong>{localMode ? '—' : customerProfiles.length}</strong><small>{localMode ? 'Available with Supabase' : 'Registered customer accounts'}</small></article>
+              <article><span className="admin-stat-icon"><Users size={18} /></span><p>Customers</p><strong>{localMode ? '—' : customerProfiles.length}</strong><small>{localMode ? 'Available with admin setup' : 'Registered customer accounts'}</small></article>
               <article><span className="admin-stat-icon"><Headset size={18} /></span><p>Live support</p><strong>{conversations.filter((item) => item.status === 'open').length}</strong><small>{supportMessages.length} messages across all chats</small></article>
               <article><span className="admin-stat-icon"><ShoppingBag size={18} /></span><p>Collection value</p><strong>{money.format(products.filter((product) => product.active !== false).reduce((total, product) => total + product.price, 0))}</strong><small>Combined price of active designs</small></article>
             </div>
@@ -634,10 +665,10 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
           <section className="admin-content">
             <div className="admin-panel">
               <div className="admin-panel-heading"><div><p className="admin-kicker">Customer accounts</p><h2>{customerProfiles.length} registered customers</h2></div></div>
-              {localMode ? <p className="admin-empty">Customer accounts require Supabase and are not available in browser demo mode.</p>
-                : customerLoadError ? <p className="admin-alert admin-section-alert" role="alert">Could not load customer accounts. Apply the latest supabase/schema.sql in the Supabase SQL editor, then refresh. Details: {customerLoadError}</p>
-                  : customerProfiles.length === 0 ? <p className="admin-empty">No registered customer accounts yet. New registrations will appear here.</p>
-                    : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Name</th><th>Email</th><th>Registered</th></tr></thead><tbody>{customerProfiles.map((customer) => <tr key={customer.id}><td>{customer.full_name || 'Customer'}</td><td><a href={`mailto:${customer.email}`}>{customer.email}</a></td><td>{formatAdminDate(customer.created_at)}</td></tr>)}</tbody></table></div>}
+              {localMode ? <p className="admin-empty">Customer accounts are available to signed-in managers when the production admin backend is configured.</p>
+                : <>{customerLoadError && <p className="admin-alert admin-section-alert" role="alert">Some customer accounts could not be loaded. Check the Supabase setup and account API configuration, then refresh. Details: {customerLoadError}</p>}
+                  {customerProfiles.length === 0 ? <p className="admin-empty">No registered customer accounts yet. New registrations will appear here.</p>
+                    : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Name</th><th>Email</th><th>Registered</th></tr></thead><tbody>{customerProfiles.map((customer) => <tr key={customer.id}><td>{customer.full_name || 'Customer'}</td><td><a href={`mailto:${customer.email}`}>{customer.email}</a></td><td>{formatAdminDate(customer.created_at)}</td></tr>)}</tbody></table></div>}</>}
             </div>
           </section>
         )}
