@@ -186,6 +186,60 @@ test('support conversations are isolated by customer account and manager reads c
   assert.deepEqual(refreshedChat.messages.map(({ sender_role }) => sender_role), ['customer', 'customer', 'admin'])
 })
 
+test('manager can create and edit SQLite products and storefront receives active products only', async () => {
+  const unauthorized = await fetch(`${origin}/api/admin/products`)
+  assert.equal(unauthorized.status, 401)
+
+  const login = await fetch(`${origin}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ username: 'ShahzaibKS', password: 'a-manager-password' }),
+  })
+  const adminCookie = login.headers.get('set-cookie').split(';')[0]
+  const product = {
+    id: 'test-catalog-design',
+    name: 'Test Catalog Design',
+    detail: 'Hand-finished test product',
+    price: 8900,
+    category: 'Daily Wear',
+    image: 'https://example.com/product.jpg',
+    fabric: 'Cotton',
+    stitching: 'Resha stitch',
+    colorways: [{ name: 'Ivory', hex: '#e9e1d2' }],
+    tag: 'New',
+    active: true,
+  }
+  const create = await fetch(`${origin}/api/admin/products`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ product }),
+  })
+  assert.equal(create.status, 200)
+  assert.deepEqual((await create.json()).product, product)
+
+  const storefront = await fetch(`${origin}/api/products`)
+  assert.equal(storefront.status, 200)
+  assert.ok((await storefront.json()).products.some((entry) => entry.id === product.id))
+
+  const update = await fetch(`${origin}/api/admin/products`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ product: { ...product, name: 'Updated Catalog Design', price: 9500 } }),
+  })
+  assert.equal(update.status, 200)
+  assert.equal((await update.json()).product.name, 'Updated Catalog Design')
+
+  const hide = await fetch(`${origin}/api/admin/products/${product.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ active: false }),
+  })
+  assert.equal(hide.status, 200)
+  assert.equal((await hide.json()).product.active, false)
+  const afterHide = await fetch(`${origin}/api/products`)
+  assert.ok(!(await afterHide.json()).products.some((entry) => entry.id === product.id))
+})
+
 test('manager login reports missing SQL admin credentials as a setup error', async () => {
   const missingConfigDirectory = mkdtempSync(join(tmpdir(), 'mian-admin-config-test-'))
   const unconfigured = createAccountApp({

@@ -3,7 +3,8 @@ import { Link, NavLink, Navigate, Route, Routes, useLocation, useParams } from '
 import { ArrowDown, ArrowRight, ArrowUpRight, Check, Menu, Minus, Plus, ShoppingBag, UserRound, X } from 'lucide-react'
 import type { Colorway, Product } from './types'
 import { supabase } from './lib/supabase'
-import { readLocalProducts, readLocalRequests, subscribeToLocalAdminData, writeLocalRequests } from './lib/admin-store'
+import { readLocalRequests, writeLocalRequests } from './lib/admin-store'
+import { readApiResponse } from './lib/api-response'
 import AdminPage from './AdminPage'
 import AccountPage from './AccountPage'
 import SupportWidget from './SupportWidget'
@@ -276,7 +277,7 @@ function NotFoundPage() {
 
 function App() {
   const location = useLocation()
-  const [catalog, setCatalog] = useState<Product[]>(() => supabase ? products : readLocalProducts(products))
+  const [catalog, setCatalog] = useState<Product[]>(products)
   const [catalogLoadError, setCatalogLoadError] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
   const [cartOpen, setCartOpen] = useState(false)
@@ -286,15 +287,26 @@ function App() {
 
   useEffect(() => {
     if (!supabase) {
-      const unsubscribe = subscribeToLocalAdminData(() => {
+      let mounted = true
+      async function loadSqlCatalog() {
         try {
-          setCatalog(readLocalProducts(products))
-          setCatalogLoadError('')
+          const response = await fetch('/api/products')
+          const result = await readApiResponse<{ products?: Product[]; error?: string }>(response)
+          if (!response.ok) throw new Error(result.error ?? 'Could not load catalog products.')
+          if (mounted) {
+            if (result.products?.length) setCatalog(result.products)
+            setCatalogLoadError('')
+          }
         } catch (loadError) {
-          setCatalogLoadError(loadError instanceof Error ? loadError.message : 'Could not load locally saved products.')
+          if (mounted) setCatalogLoadError(loadError instanceof Error ? loadError.message : 'Could not load the latest collection.')
         }
-      })
-      return unsubscribe
+      }
+      void loadSqlCatalog()
+      const interval = window.setInterval(() => { void loadSqlCatalog() }, 30_000)
+      return () => {
+        mounted = false
+        window.clearInterval(interval)
+      }
     }
     const client = supabase
     let mounted = true

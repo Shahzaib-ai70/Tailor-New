@@ -131,12 +131,27 @@ export function createAccountApp({
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS support_messages_conversation ON support_messages(conversation_id, created_at);
+    CREATE TABLE IF NOT EXISTS catalog_products (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      detail TEXT NOT NULL,
+      price REAL NOT NULL,
+      category TEXT NOT NULL,
+      image TEXT NOT NULL,
+      fabric TEXT NOT NULL,
+      stitching TEXT NOT NULL,
+      colorways_json TEXT NOT NULL,
+      tag TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS catalog_products_active_name ON catalog_products(active, name);
   `)
 
   const app = express()
   app.disable('x-powered-by')
   app.set('trust proxy', 1)
-  app.use(express.json({ limit: '10kb', strict: true }))
+  app.use(express.json({ limit: '1mb', strict: true }))
   app.use(['/api/account', '/api/admin', '/api/support'], (_request, response, next) => {
     response.setHeader('Cache-Control', 'no-store')
     next()
@@ -280,12 +295,108 @@ export function createAccountApp({
     `).get(conversationId)?.created_at
   }
 
+  function serializeProduct(row) {
+    return {
+      id: row.id,
+      name: row.name,
+      detail: row.detail,
+      price: row.price,
+      category: row.category,
+      image: row.image,
+      fabric: row.fabric,
+      stitching: row.stitching,
+      colorways: JSON.parse(row.colorways_json),
+      ...(row.tag ? { tag: row.tag } : {}),
+      active: Boolean(row.active),
+    }
+  }
+
+  function validateProduct(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const textFields = ['id', 'name', 'detail', 'category', 'image', 'fabric', 'stitching']
+    if (textFields.some((field) => typeof value[field] !== 'string' || !value[field].trim())) return null
+    const id = value.id.trim()
+    if (id.length > 120 || !/^[a-z0-9-]+$/.test(id)) return null
+    if (value.name.length > 200 || value.detail.length > 1000 || value.category.length > 100
+      || value.image.length > 2048 || value.fabric.length > 200 || value.stitching.length > 1000) return null
+    if (!Number.isFinite(value.price) || value.price < 0 || value.price > 100000000) return null
+    try {
+      const imageUrl = new URL(value.image)
+      if (imageUrl.protocol !== 'https:' && imageUrl.protocol !== 'http:') return null
+    } catch {
+      return null
+    }
+    if (!Array.isArray(value.colorways) || value.colorways.length < 1 || value.colorways.length > 30) return null
+    if (value.colorways.some((colorway) => !colorway
+      || typeof colorway.name !== 'string'
+      || !colorway.name.trim()
+      || colorway.name.length > 80
+      || typeof colorway.hex !== 'string'
+      || !/^#[\da-f]{6}$/i.test(colorway.hex))) return null
+    if (value.tag !== undefined && (typeof value.tag !== 'string' || value.tag.length > 100)) return null
+    return {
+      ...value,
+      id,
+      name: value.name.trim(),
+      detail: value.detail.trim(),
+      category: value.category.trim(),
+      image: value.image.trim(),
+      fabric: value.fabric.trim(),
+      stitching: value.stitching.trim(),
+      colorways: value.colorways.map((colorway) => ({ name: colorway.name.trim(), hex: colorway.hex })),
+      tag: typeof value.tag === 'string' && value.tag.trim() ? value.tag.trim() : null,
+      active: value.active !== false,
+    }
+  }
+
+  const saveProduct = database.prepare(`
+    INSERT INTO catalog_products
+      (id, name, detail, price, category, image, fabric, stitching, colorways_json, tag, active, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      detail = excluded.detail,
+      price = excluded.price,
+      category = excluded.category,
+      image = excluded.image,
+      fabric = excluded.fabric,
+      stitching = excluded.stitching,
+      colorways_json = excluded.colorways_json,
+      tag = excluded.tag,
+      active = excluded.active,
+      updated_at = excluded.updated_at
+  `)
+
+  function storeProduct(product) {
+    saveProduct.run(
+      product.id,
+      product.name,
+      product.detail,
+      product.price,
+      product.category,
+      product.image,
+      product.fabric,
+      product.stitching,
+      JSON.stringify(product.colorways),
+      product.tag,
+      product.active ? 1 : 0,
+      new Date().toISOString(),
+    )
+  }
+
   app.get('/api/account', (request, response) => {
     database.prepare('DELETE FROM customer_sessions WHERE expires_at <= ?').run(Date.now())
     const token = cookieValue(request, 'mian_session')
     const account = token ? findSessionAccount.get(hashToken(token), Date.now()) : null
     if (!account && token) clearSessionCookie(response)
     response.json({ user: account ? safeUser(account) : null })
+  })
+
+  app.get('/api/products', (_request, response) => {
+    const rows = database.prepare(`
+      SELECT * FROM catalog_products WHERE active = 1 ORDER BY name
+    `).all()
+    response.json({ products: rows.map(serializeProduct) })
   })
 
   app.get('/api/support', (request, response) => {
@@ -490,6 +601,71 @@ export function createAccountApp({
       ORDER BY datetime(created_at) DESC, id DESC
     `).all()
     response.json({ customers })
+  })
+
+  app.use('/api/admin/products', (request, response, next) => {
+    if (!getAdminSession(request, response)) {
+      response.status(401).json({ error: 'Manager sign-in is required to manage products.' })
+      return
+    }
+    next()
+  })
+
+  app.get('/api/admin/products', (_request, response) => {
+    const rows = database.prepare('SELECT * FROM catalog_products ORDER BY name').all()
+    response.json({ products: rows.map(serializeProduct) })
+  })
+
+  app.post('/api/admin/products/seed', allowSameOrigin, (request, response) => {
+    if (database.prepare('SELECT COUNT(*) AS count FROM catalog_products').get().count > 0) {
+      response.status(409).json({ error: 'The catalog already contains products.' })
+      return
+    }
+    const incoming = request.body?.products
+    if (!Array.isArray(incoming) || incoming.length < 1 || incoming.length > 1000) {
+      response.status(400).json({ error: 'Provide between 1 and 1000 valid catalog products.' })
+      return
+    }
+    const validated = incoming.map(validateProduct)
+    if (validated.some((product) => !product)
+      || new Set(validated.map((product) => product.id)).size !== validated.length) {
+      response.status(400).json({ error: 'The catalog contains invalid or duplicate product entries.' })
+      return
+    }
+    database.exec('BEGIN')
+    try {
+      for (const product of validated) storeProduct(product)
+      database.exec('COMMIT')
+    } catch (error) {
+      database.exec('ROLLBACK')
+      throw error
+    }
+    const products = database.prepare('SELECT * FROM catalog_products ORDER BY name').all()
+    response.status(201).json({ products: products.map(serializeProduct) })
+  })
+
+  app.post('/api/admin/products', allowSameOrigin, (request, response) => {
+    const product = validateProduct(request.body?.product)
+    if (!product) {
+      response.status(400).json({ error: 'Check the product details, image URL, price, and colorways.' })
+      return
+    }
+    storeProduct(product)
+    response.json({ product: serializeProduct(database.prepare('SELECT * FROM catalog_products WHERE id = ?').get(product.id)) })
+  })
+
+  app.patch('/api/admin/products/:id', allowSameOrigin, (request, response) => {
+    if (typeof request.body?.active !== 'boolean') {
+      response.status(400).json({ error: 'Product visibility must be true or false.' })
+      return
+    }
+    const result = database.prepare('UPDATE catalog_products SET active = ?, updated_at = ? WHERE id = ?')
+      .run(request.body.active ? 1 : 0, new Date().toISOString(), request.params.id)
+    if (result.changes === 0) {
+      response.status(404).json({ error: 'Product not found.' })
+      return
+    }
+    response.json({ product: serializeProduct(database.prepare('SELECT * FROM catalog_products WHERE id = ?').get(request.params.id)) })
   })
 
   app.post('/api/account/register', allowSameOrigin, rateLimit, async (request, response, next) => {

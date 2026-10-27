@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { ArrowLeft, ArrowRight, Check, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShieldCheck, ShoppingBag, Users, X } from 'lucide-react'
@@ -6,7 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import type { CustomerProfile, FittingRequest, Product, SupportConversation, SupportMessage } from './types'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { readApiResponse } from './lib/api-response'
-import { getLocalAdminSnapshot, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalProducts, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
+import { getLocalAdminSnapshot, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
 import './Admin.css'
 
 type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'support' | 'settings'
@@ -15,6 +15,7 @@ type AccountDirectoryCustomer = { id: number; fullName: string; email: string; c
 type AccountDirectoryResponse = { customers?: AccountDirectoryCustomer[]; error?: string }
 type AdminSessionResponse = { user?: LocalAdminUser | null; error?: string }
 type AdminSupportResponse = { conversations?: SupportConversation[]; messages?: SupportMessage[]; error?: string }
+type AdminProductsResponse = { products?: Product[]; product?: Product; error?: string }
 type ProductDraft = {
   id: string
   name: string
@@ -118,14 +119,19 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft)
   const [editing, setEditing] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
+  const productEditorRef = useRef<HTMLFormElement>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const products = localMode ? localSnapshot.products : storedProducts
+  const products = storedProducts
   const requests = localMode ? localSnapshot.requests : storedRequests
   const conversations = storedConversations
   const supportMessages = storedSupportMessages
   const whatsAppNumber = whatsAppDraft ?? (localMode ? localSnapshot.whatsappNumber : storedWhatsAppNumber)
+
+  useEffect(() => {
+    if (editorOpen) productEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [editorOpen])
 
   function navigateSection(nextSection: AdminSection) {
     setSection(nextSection)
@@ -157,7 +163,29 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     }
     try {
       if (localMode) {
-        setProducts(readLocalProducts(starterProducts))
+        let response = await fetch('/api/admin/products')
+        let result = await readApiResponse<AdminProductsResponse>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not load catalog products.')
+        let loadedProducts = result.products ?? []
+        if (loadedProducts.length === 0) {
+          response = await fetch('/api/admin/products/seed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ products: readLocalProducts(starterProducts) }),
+          })
+          result = await readApiResponse<AdminProductsResponse>(response)
+          if (!response.ok && response.status !== 409) {
+            throw new Error(result.error ?? 'Could not move the existing catalog into the account database.')
+          }
+          if (response.ok) loadedProducts = result.products ?? []
+          else {
+            const retry = await fetch('/api/admin/products')
+            const retryResult = await readApiResponse<AdminProductsResponse>(retry)
+            if (!retry.ok) throw new Error(retryResult.error ?? 'Could not reload catalog products.')
+            loadedProducts = retryResult.products ?? []
+          }
+        }
+        setProducts(loadedProducts)
         setRequests(readLocalRequests())
         setWhatsAppNumber(readLocalWhatsAppNumber())
         const supportResponse = await fetch('/api/admin/support')
@@ -409,9 +437,15 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         active: draft.active,
       }
       if (localMode) {
-        const nextProducts = [...products.filter((item) => item.id !== product.id), product].sort((a, b) => a.name.localeCompare(b.name))
-        writeLocalProducts(nextProducts)
-        setProducts(nextProducts)
+        const response = await fetch('/api/admin/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product }),
+        })
+        const result = await readApiResponse<AdminProductsResponse>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not save this product.')
+        if (!result.product) throw new Error('The account service did not confirm the saved product.')
+        setProducts((current) => [...current.filter((item) => item.id !== result.product!.id), result.product!].sort((a, b) => a.name.localeCompare(b.name)))
       } else {
         if (!supabase) return
         const { error: saveError } = await supabase.from('products').upsert({ ...product, updated_at: new Date().toISOString() })
@@ -435,9 +469,15 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     setError('')
     try {
       if (localMode) {
-        const nextProducts = products.map((item) => item.id === product.id ? { ...item, active: item.active === false } : item)
-        writeLocalProducts(nextProducts)
-        setProducts(nextProducts)
+        const response = await fetch(`/api/admin/products/${encodeURIComponent(product.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active: product.active === false }),
+        })
+        const result = await readApiResponse<AdminProductsResponse>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not update product visibility.')
+        if (!result.product) throw new Error('The account service did not confirm the visibility change.')
+        setProducts((current) => current.map((item) => item.id === result.product!.id ? result.product! : item))
       } else {
         if (!supabase) return
         const { error: updateError } = await supabase.from('products').update({
@@ -481,9 +521,16 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     setSaving(true)
     try {
       if (localMode) {
-        writeLocalProducts(starterProducts)
-        setProducts(starterProducts)
-        setNotice(`${starterProducts.length} starter designs loaded into this browser.`)
+        const response = await fetch('/api/admin/products/seed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ products: starterProducts }),
+        })
+        const result = await readApiResponse<AdminProductsResponse>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not load the starter collection.')
+        const loadedProducts = result.products ?? []
+        setProducts(loadedProducts)
+        setNotice(`${loadedProducts.length} starter designs loaded into the catalog.`)
         return
       }
       if (!supabase) return
@@ -750,7 +797,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               <div className="admin-panel-heading"><div><p className="admin-kicker">Catalog</p><h2>{products.length} products</h2></div><button className="admin-primary-button admin-add-button" type="button" onClick={startNewProduct}><Plus size={16} /> Add product</button></div>
               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Visibility</th><th>Actions</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}><td><div className="admin-product-cell"><img src={product.image} alt="" /><span><strong>{product.name}</strong><small>{product.id}</small></span></div></td><td>{product.category}</td><td>{money.format(product.price)}</td><td><span className={product.active === false ? 'admin-status inactive' : 'admin-status active'}>{product.active === false ? 'Hidden' : 'Active'}</span></td><td><div className="admin-row-actions"><button className="admin-small-button" type="button" onClick={() => startEditProduct(product)}>Edit</button><button className="admin-small-button" type="button" onClick={() => void toggleProduct(product)}>{product.active === false ? 'Publish' : 'Hide'}</button></div></td></tr>)}</tbody></table></div>
             </div>
-            {editorOpen && <form className="admin-panel admin-product-form" onSubmit={saveProduct}><div className="admin-panel-heading"><div><p className="admin-kicker">{editing ? 'Edit listing' : 'New listing'}</p><h2>{editing ? draft.name : 'Product details'}</h2></div><button className="admin-icon-button" type="button" onClick={() => { setDraft(emptyDraft); setEditing(false); setEditorOpen(false) }} aria-label="Close editor"><X size={17} /></button></div><div className="admin-form-grid">
+            {editorOpen && <form ref={productEditorRef} className="admin-panel admin-product-form" onSubmit={saveProduct}><div className="admin-panel-heading"><div><p className="admin-kicker">{editing ? 'Edit listing' : 'New listing'}</p><h2>{editing ? draft.name : 'Product details'}</h2></div><button className="admin-icon-button" type="button" onClick={() => { setDraft(emptyDraft); setEditing(false); setEditorOpen(false) }} aria-label="Close editor"><X size={17} /></button></div><div className="admin-form-grid">
               <label>Product ID<input required pattern="[a-z0-9-]+" value={draft.id} readOnly={editing} onChange={(event) => setDraft({ ...draft, id: event.target.value })} placeholder="e.g. mehran-straight-cut" /></label>
               <label>Name<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
               <label>Category<input required value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder="Daily Wear" /></label>
