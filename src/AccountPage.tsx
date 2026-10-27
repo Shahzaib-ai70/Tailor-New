@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowLeft, LogOut } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { readApiResponse } from './lib/api-response'
 import './Account.css'
 
 type Account = {
@@ -18,7 +19,7 @@ async function accountRequest(path: string, body?: object): Promise<Account | nu
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
-  const result: { user?: Account | null; error?: string } = await response.json()
+  const result = await readApiResponse<{ user?: Account | null; error?: string }>(response)
   if (!response.ok) throw new Error(result.error || 'Could not complete your account request.')
   return result.user ?? null
 }

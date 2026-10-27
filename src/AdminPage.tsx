@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Headset, LogOut, Package, Plus, RefreshCw, Scissors, 
 import { Link, useSearchParams } from 'react-router-dom'
 import type { CustomerProfile, FittingRequest, Product, SupportConversation, SupportMessage } from './types'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { readApiResponse } from './lib/api-response'
 import { getLocalAdminSnapshot, readLocalConversations, readLocalMessages, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalConversations, writeLocalMessages, writeLocalProducts, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
 import './Admin.css'
 
@@ -154,7 +155,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         setWhatsAppNumber(readLocalWhatsAppNumber())
         try {
           const response = await fetch('/api/admin/customers')
-          const result = await response.json() as AccountDirectoryResponse
+          const result = await readApiResponse<AccountDirectoryResponse>(response)
           if (!response.ok) throw new Error(result.error ?? 'Could not load customer accounts.')
           setCustomerProfiles((result.customers ?? []).map((customer) => ({
             id: `account-${customer.id}`,
@@ -183,7 +184,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         const directoryResponse = await fetch('/api/admin/customers', {
           headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
         })
-        const directoryResult = await directoryResponse.json() as AccountDirectoryResponse
+        const directoryResult = await readApiResponse<AccountDirectoryResponse>(directoryResponse)
         if (!directoryResponse.ok) {
           directoryError = directoryResult.error ?? 'Could not load website registrations.'
         } else {
@@ -227,7 +228,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     if (!localMode) return
     let mounted = true
     void fetch('/api/admin/session').then(async (response) => {
-      const result = await response.json() as AdminSessionResponse
+      const result = await readApiResponse<AdminSessionResponse>(response)
       if (!response.ok) throw new Error(result.error ?? 'Could not check manager session.')
       if (mounted) setLocalAdminUser(result.user ?? null)
     }).catch((sessionError: unknown) => {
@@ -304,7 +305,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password }),
         })
-        const result = await response.json() as AdminSessionResponse
+        const result = await readApiResponse<AdminSessionResponse>(response)
         if (!response.ok) throw new Error(result.error ?? 'Could not sign in.')
         setLocalAdminUser(result.user ?? null)
         return
@@ -325,7 +326,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     try {
       if (localMode) {
         const response = await fetch('/api/admin/logout', { method: 'POST' })
-        const result = await response.json() as AdminSessionResponse
+        const result = await readApiResponse<AdminSessionResponse>(response)
         if (!response.ok) throw new Error(result.error ?? 'Could not sign out.')
         setLocalAdminUser(null)
         setCustomerProfiles([])
