@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowLeft, Check, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShoppingBag, Users, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShieldCheck, ShoppingBag, Users, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { CustomerProfile, FittingRequest, Product, SupportConversation, SupportMessage } from './types'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
@@ -602,18 +602,35 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
 
   if ((localMode && !localAdminUser) || (!localMode && !session)) {
     return (
-      <div className="admin-gate">
-        <form className="admin-login-card" onSubmit={signIn}>
-          <span className="admin-brand-mark">M</span>
-          <p className="admin-kicker">Mian Tailor And Design</p>
-          <h1>Welcome back.</h1>
-          <p>Sign in with your manager account to view customer registrations.</p>
-          <label>Email address<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-          <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-          {error && <p className="admin-alert" role="alert">{error}</p>}
-          <button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Signing in…' : 'Sign in'}</button>
-          <Link className="admin-back-link" to="/"><ArrowLeft size={15} /> Back to storefront</Link>
-        </form>
+      <div className="admin-gate admin-login-gate">
+        <div className="admin-login-layout">
+          <section className="admin-login-intro" aria-label="Mian manager portal">
+            <Link className="admin-login-brand" to="/">
+              <span className="admin-brand-mark">M</span>
+              <span>MIAN <small>TAILOR AND DESIGN</small></span>
+            </Link>
+            <div className="admin-login-story">
+              <span className="admin-login-shield"><ShieldCheck size={20} /></span>
+              <p className="admin-kicker">Manager portal</p>
+              <h1>Made with care.<br /><em>Managed with purpose.</em></h1>
+              <p>A private workspace for customer registrations and the work behind every fitting.</p>
+            </div>
+            <div className="admin-login-footnote"><span>PRIVATE WORKSPACE</span><span>Customers · Collection · Appointments</span></div>
+          </section>
+          <form className="admin-login-card admin-login-v2" onSubmit={signIn}>
+            <div className="admin-login-heading">
+              <p className="admin-kicker">Account access</p>
+              <h2>Welcome back.</h2>
+              <p>Enter your manager credentials to continue.</p>
+            </div>
+            <label>Email address<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="manager@example.com" required /></label>
+            <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+            {error && <p className="admin-alert" role="alert">{error}</p>}
+            <button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Checking credentials…' : <>Sign in securely <ArrowRight size={15} /></>}</button>
+            <p className="admin-login-security"><ShieldCheck size={15} /> Manager access is verified by the account service.</p>
+            <Link className="admin-login-back" to="/"><ArrowLeft size={15} /> Return to storefront</Link>
+          </form>
+        </div>
       </div>
     )
   }

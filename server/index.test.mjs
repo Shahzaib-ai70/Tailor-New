@@ -109,6 +109,34 @@ test('manager sign-in protects the SQL customer directory and persists the sessi
   assert.equal(afterLogout.status, 401)
 })
 
+test('manager login reports missing SQL admin credentials as a setup error', async () => {
+  const missingConfigDirectory = mkdtempSync(join(tmpdir(), 'mian-admin-config-test-'))
+  const unconfigured = createAccountApp({
+    dbPath: join(missingConfigDirectory, 'accounts.sqlite'),
+    adminEmail: '',
+    adminPassword: '',
+  })
+  const unconfiguredServer = unconfigured.app.listen(0, '127.0.0.1')
+  try {
+    await new Promise((resolve, reject) => {
+      unconfiguredServer.once('listening', resolve)
+      unconfiguredServer.once('error', reject)
+    })
+    const unconfiguredOrigin = `http://127.0.0.1:${unconfiguredServer.address().port}`
+    const response = await fetch(`${unconfiguredOrigin}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: unconfiguredOrigin },
+      body: JSON.stringify({ email: 'manager@example.com', password: 'a-manager-password' }),
+    })
+    assert.equal(response.status, 503)
+    assert.match((await response.json()).error, /ADMIN_EMAIL/)
+  } finally {
+    await new Promise((resolve, reject) => unconfiguredServer.close((error) => error ? reject(error) : resolve()))
+    unconfigured.database.close()
+    rmSync(missingConfigDirectory, { recursive: true, force: true })
+  }
+})
+
 test('logout clears the session and cross-origin mutations are rejected', async () => {
   const login = await fetch(`${origin}/api/account/login`, {
     method: 'POST',
