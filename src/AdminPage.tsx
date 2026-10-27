@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { ArrowLeft, ArrowRight, Check, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShieldCheck, ShoppingBag, Users, X } from 'lucide-react'
@@ -119,7 +119,6 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft)
   const [editing, setEditing] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
-  const productEditorRef = useRef<HTMLFormElement>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -130,8 +129,18 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const whatsAppNumber = whatsAppDraft ?? (localMode ? localSnapshot.whatsappNumber : storedWhatsAppNumber)
 
   useEffect(() => {
-    if (editorOpen) productEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [editorOpen])
+    if (!editorOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !saving) setEditorOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [editorOpen, saving])
 
   function navigateSection(nextSection: AdminSection) {
     setSection(nextSection)
@@ -797,8 +806,12 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               <div className="admin-panel-heading"><div><p className="admin-kicker">Catalog</p><h2>{products.length} products</h2></div><button className="admin-primary-button admin-add-button" type="button" onClick={startNewProduct}><Plus size={16} /> Add product</button></div>
               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Visibility</th><th>Actions</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}><td><div className="admin-product-cell"><img src={product.image} alt="" /><span><strong>{product.name}</strong><small>{product.id}</small></span></div></td><td>{product.category}</td><td>{money.format(product.price)}</td><td><span className={product.active === false ? 'admin-status inactive' : 'admin-status active'}>{product.active === false ? 'Hidden' : 'Active'}</span></td><td><div className="admin-row-actions"><button className="admin-small-button" type="button" onClick={() => startEditProduct(product)}>Edit</button><button className="admin-small-button" type="button" onClick={() => void toggleProduct(product)}>{product.active === false ? 'Publish' : 'Hide'}</button></div></td></tr>)}</tbody></table></div>
             </div>
-            {editorOpen && <form ref={productEditorRef} className="admin-panel admin-product-form" onSubmit={saveProduct}><div className="admin-panel-heading"><div><p className="admin-kicker">{editing ? 'Edit listing' : 'New listing'}</p><h2>{editing ? draft.name : 'Product details'}</h2></div><button className="admin-icon-button" type="button" onClick={() => { setDraft(emptyDraft); setEditing(false); setEditorOpen(false) }} aria-label="Close editor"><X size={17} /></button></div><div className="admin-form-grid">
-              <label>Product ID<input required pattern="[a-z0-9-]+" value={draft.id} readOnly={editing} onChange={(event) => setDraft({ ...draft, id: event.target.value })} placeholder="e.g. mehran-straight-cut" /></label>
+            {editorOpen && <div className="admin-product-modal" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditorOpen(false) }}>
+              <form className="admin-panel admin-product-form" role="dialog" aria-modal="true" aria-labelledby="admin-product-editor-title" onSubmit={saveProduct}>
+                <div className="admin-panel-heading"><div><p className="admin-kicker">{editing ? 'Edit listing' : 'New listing'}</p><h2 id="admin-product-editor-title">{editing ? draft.name : 'Product details'}</h2></div><button className="admin-icon-button" type="button" onClick={() => { setDraft(emptyDraft); setEditing(false); setEditorOpen(false) }} aria-label="Close editor"><X size={17} /></button></div>
+                {error && <p className="admin-alert admin-product-editor-alert" role="alert">{error}</p>}
+                <div className="admin-form-grid">
+              <label>Product ID<input autoFocus required pattern="[a-z0-9-]+" value={draft.id} readOnly={editing} onChange={(event) => setDraft({ ...draft, id: event.target.value })} placeholder="e.g. mehran-straight-cut" /></label>
               <label>Name<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
               <label>Category<input required value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder="Daily Wear" /></label>
               <label>Price (PKR)<input required type="number" min="0" step="1" value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} /></label>
@@ -809,7 +822,9 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               <label className="admin-field-full">Stitching details<input required value={draft.stitching} onChange={(event) => setDraft({ ...draft, stitching: event.target.value })} /></label>
               <label className="admin-field-full">Colorways <span className="admin-optional">(one Name: #RRGGBB per line)</span><textarea required rows={5} value={draft.colorwaysText} onChange={(event) => setDraft({ ...draft, colorwaysText: event.target.value })} /></label>
               <label className="admin-checkbox"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} /> Visible in storefront</label>
-            </div><div className="admin-form-actions"><button className="admin-secondary-button" type="button" onClick={() => { setDraft(emptyDraft); setEditing(false); setEditorOpen(false) }}>Cancel</button><button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create product'}</button></div></form>}
+            </div><div className="admin-form-actions"><button className="admin-secondary-button" type="button" onClick={() => { setDraft(emptyDraft); setEditing(false); setEditorOpen(false) }}>Cancel</button><button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create product'}</button></div>
+              </form>
+            </div>}
           </section>
         )}
 
