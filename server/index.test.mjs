@@ -14,7 +14,7 @@ before(async () => {
   directory = mkdtempSync(join(tmpdir(), 'mian-account-test-'))
   const accountApp = createAccountApp({
     dbPath: join(directory, 'accounts.sqlite'),
-    adminEmail: 'manager@example.com',
+    adminUsername: 'ShahzaibKS',
     adminPassword: 'a-manager-password',
   })
   database = accountApp.database
@@ -74,21 +74,21 @@ test('manager sign-in protects the SQL customer directory and persists the sessi
   const invalidLogin = await fetch(`${origin}/api/admin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: origin },
-    body: JSON.stringify({ email: 'manager@example.com', password: 'wrong-password' }),
+    body: JSON.stringify({ username: 'ShahzaibKS', password: 'wrong-password' }),
   })
   assert.equal(invalidLogin.status, 401)
 
   const login = await fetch(`${origin}/api/admin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: origin },
-    body: JSON.stringify({ email: 'MANAGER@example.com', password: 'a-manager-password' }),
+    body: JSON.stringify({ username: 'shahzaibks', password: 'a-manager-password' }),
   })
   assert.equal(login.status, 200)
-  assert.equal((await login.json()).user.email, 'manager@example.com')
+  assert.equal((await login.json()).user.username, 'shahzaibks')
   const cookie = login.headers.get('set-cookie').split(';')[0]
 
   const session = await fetch(`${origin}/api/admin/session`, { headers: { Cookie: cookie } })
-  assert.equal((await session.json()).user.email, 'manager@example.com')
+  assert.equal((await session.json()).user.username, 'shahzaibks')
 
   const directory = await fetch(`${origin}/api/admin/customers`, { headers: { Cookie: cookie } })
   assert.equal(directory.status, 200)
@@ -113,7 +113,7 @@ test('manager login reports missing SQL admin credentials as a setup error', asy
   const missingConfigDirectory = mkdtempSync(join(tmpdir(), 'mian-admin-config-test-'))
   const unconfigured = createAccountApp({
     dbPath: join(missingConfigDirectory, 'accounts.sqlite'),
-    adminEmail: '',
+    adminUsername: '',
     adminPassword: '',
   })
   const unconfiguredServer = unconfigured.app.listen(0, '127.0.0.1')
@@ -129,11 +129,39 @@ test('manager login reports missing SQL admin credentials as a setup error', asy
       body: JSON.stringify({ email: 'manager@example.com', password: 'a-manager-password' }),
     })
     assert.equal(response.status, 503)
-    assert.match((await response.json()).error, /ADMIN_EMAIL/)
+    assert.match((await response.json()).error, /ADMIN_USERNAME/)
   } finally {
     await new Promise((resolve, reject) => unconfiguredServer.close((error) => error ? reject(error) : resolve()))
     unconfigured.database.close()
     rmSync(missingConfigDirectory, { recursive: true, force: true })
+  }
+})
+
+test('manager login rejects a password that repeats the username', async () => {
+  const samePasswordDirectory = mkdtempSync(join(tmpdir(), 'mian-admin-password-test-'))
+  const insecure = createAccountApp({
+    dbPath: join(samePasswordDirectory, 'accounts.sqlite'),
+    adminUsername: 'ShahzaibKS',
+    adminPassword: 'ShahzaibKS',
+  })
+  const insecureServer = insecure.app.listen(0, '127.0.0.1')
+  try {
+    await new Promise((resolve, reject) => {
+      insecureServer.once('listening', resolve)
+      insecureServer.once('error', reject)
+    })
+    const insecureOrigin = `http://127.0.0.1:${insecureServer.address().port}`
+    const response = await fetch(`${insecureOrigin}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: insecureOrigin },
+      body: JSON.stringify({ username: 'ShahzaibKS', password: 'ShahzaibKS' }),
+    })
+    assert.equal(response.status, 503)
+    assert.match((await response.json()).error, /different from the username/)
+  } finally {
+    await new Promise((resolve, reject) => insecureServer.close((error) => error ? reject(error) : resolve()))
+    insecure.database.close()
+    rmSync(samePasswordDirectory, { recursive: true, force: true })
   }
 })
 

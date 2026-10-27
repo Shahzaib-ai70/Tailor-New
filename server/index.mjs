@@ -48,6 +48,12 @@ function normalizeEmail(value) {
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null
 }
 
+function normalizeUsername(value) {
+  if (typeof value !== 'string') return null
+  const username = value.trim().toLowerCase()
+  return username.length >= 3 && username.length <= 64 && /^[a-z0-9._-]+$/.test(username) ? username : null
+}
+
 function allowSameOrigin(request, response, next) {
   const origin = request.get('origin')
   if (!origin) {
@@ -68,7 +74,7 @@ function allowSameOrigin(request, response, next) {
 
 export function createAccountApp({
   dbPath = process.env.AUTH_DB_PATH ?? './data/accounts.sqlite',
-  adminEmail = process.env.ADMIN_EMAIL,
+  adminUsername = process.env.ADMIN_USERNAME ?? process.env.ADMIN_EMAIL,
   adminPassword = process.env.ADMIN_PASSWORD,
 } = {}) {
   const databasePath = resolve(dbPath)
@@ -150,7 +156,7 @@ export function createAccountApp({
     const token = cookieValue(request, 'mian_admin_session')
     const session = token ? findAdminSession.get(hashToken(token), Date.now()) : null
     if (!session && token) clearSessionCookie(response, 'mian_admin_session')
-    return session ? { email: normalizeEmail(adminEmail) } : null
+    return session ? { username: normalizeUsername(adminUsername) } : null
   }
 
   app.get('/api/account', (request, response) => {
@@ -168,14 +174,17 @@ export function createAccountApp({
 
   app.post('/api/admin/login', allowSameOrigin, rateLimit, async (request, response, next) => {
     const body = request.body && typeof request.body === 'object' ? request.body : {}
-    const email = normalizeEmail(body.email)
+    const username = normalizeUsername(body.username ?? body.email)
     const password = body.password
-    if (!normalizeEmail(adminEmail) || typeof adminPassword !== 'string' || adminPassword.length < 12) {
-      response.status(503).json({ error: 'Set ADMIN_EMAIL and a manager password of at least 12 characters in the account service environment.' })
+    if (!normalizeUsername(adminUsername)
+      || typeof adminPassword !== 'string'
+      || adminPassword.length < 12
+      || adminPassword.toLowerCase() === normalizeUsername(adminUsername)) {
+      response.status(503).json({ error: 'Set ADMIN_USERNAME and a unique manager password of at least 12 characters that is different from the username.' })
       return
     }
-    if (!email || typeof password !== 'string' || password.length > 128) {
-      response.status(400).json({ error: 'Enter a valid manager email and password.' })
+    if (!username || typeof password !== 'string' || password.length > 128) {
+      response.status(400).json({ error: 'Enter a valid manager username and password.' })
       return
     }
     try {
@@ -184,7 +193,7 @@ export function createAccountApp({
         scrypt(password, salt, passwordHashBytes, scryptOptions),
         scrypt(adminPassword, salt, passwordHashBytes, scryptOptions),
       ])
-      const valid = email === normalizeEmail(adminEmail)
+      const valid = username === normalizeUsername(adminUsername)
         && providedHash.length === configuredHash.length
         && timingSafeEqual(providedHash, configuredHash)
       if (!valid) {
@@ -195,7 +204,7 @@ export function createAccountApp({
       database.prepare('INSERT INTO admin_sessions (token_hash, expires_at) VALUES (?, ?)')
         .run(hashToken(token), Date.now() + sessionDurationSeconds * 1000)
       setSessionCookie(response, token, 'mian_admin_session')
-      response.json({ user: { email: normalizeEmail(adminEmail) } })
+      response.json({ user: { username: normalizeUsername(adminUsername) } })
     } catch (error) {
       next(error)
     }

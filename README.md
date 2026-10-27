@@ -29,13 +29,13 @@ Node.js 22.5 or newer is required for the built-in SQLite account store.
 
 ## Admin panel
 
-Open `/admin` and sign in with the manager email and password configured for the account API. Supabase is not required for manager authentication or the customer directory. The account API verifies the manager credentials and stores hashed-token sessions in SQLite; customer registrations are read from the same SQLite database used by `/account`. Password hashes are never returned by the customer-directory API.
+Open `/admin` and sign in with the manager username and password configured for the account API. Supabase is not required for manager authentication or the customer directory. The account API verifies the manager credentials and stores hashed-token sessions in SQLite; customer registrations are read from the same SQLite database used by `/account`. Password hashes are never returned by the customer-directory API.
 
-Set `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` of at least 12 characters in the account API environment before starting it. `AUTH_DB_PATH` defaults to `./data/accounts.sqlite`; the database file is excluded from Git, so back it up and keep it on persistent storage. Catalog edits, fitting requests, and demo support data remain browser-local when Supabase is not configured.
+Set `ADMIN_USERNAME` and a unique `ADMIN_PASSWORD` of at least 12 characters that is different from the username in the account API environment before starting it. `AUTH_DB_PATH` defaults to `./data/accounts.sqlite`; the database file is excluded from Git, so back it up and keep it on persistent storage. Catalog edits, fitting requests, and demo support data remain browser-local when Supabase is not configured.
 
 ### VPS account API deployment
 
-Create a `.env` file in the project directory using `.env.example`, set `ADMIN_EMAIL` and a strong `ADMIN_PASSWORD`, and keep the SQLite database on persistent storage. The API loads this file when started from the project directory. Run it as a persistent Node process with PM2:
+Create a `.env` file in the project directory using `.env.example`, set `ADMIN_USERNAME` and a strong `ADMIN_PASSWORD`, and keep the SQLite database on persistent storage. The API loads this file when started from the project directory. Run it as a persistent Node process with PM2:
 
 ```sh
 npm ci

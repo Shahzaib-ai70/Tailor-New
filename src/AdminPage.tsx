@@ -10,7 +10,7 @@ import { getLocalAdminSnapshot, readLocalConversations, readLocalMessages, readL
 import './Admin.css'
 
 type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'support' | 'settings'
-type LocalAdminUser = { email: string }
+type LocalAdminUser = { username: string }
 type AccountDirectoryCustomer = { id: number; fullName: string; email: string; createdAt: string }
 type AccountDirectoryResponse = { customers?: AccountDirectoryCustomer[]; error?: string }
 type AdminSessionResponse = { user?: LocalAdminUser | null; error?: string }
@@ -105,7 +105,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const [storedWhatsAppNumber, setWhatsAppNumber] = useState(() => localMode ? localSnapshot.whatsappNumber : '')
   const [whatsAppDraft, setWhatsAppDraft] = useState<string | null>(null)
   const [loading, setLoading] = useState(!localMode)
-  const [email, setEmail] = useState('')
+  const [loginName, setLoginName] = useState('')
   const [password, setPassword] = useState('')
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft)
   const [editing, setEditing] = useState(false)
@@ -303,7 +303,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         const response = await fetch('/api/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ username: loginName, password }),
         })
         const result = await readApiResponse<AdminSessionResponse>(response)
         if (!response.ok) throw new Error(result.error ?? 'Could not sign in.')
@@ -311,7 +311,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         return
       }
       if (!supabase) throw new Error('Admin authentication is unavailable.')
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: loginName, password })
       if (signInError) throw signInError
     } catch (signInError) {
       setError(signInError instanceof Error ? signInError.message : 'Could not sign in.')
@@ -621,9 +621,9 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
             <div className="admin-login-heading">
               <p className="admin-kicker">Account access</p>
               <h2>Welcome back.</h2>
-              <p>Enter your manager credentials to continue.</p>
+              <p>{localMode ? 'Enter your manager username and password to continue.' : 'Enter your manager email and password to continue.'}</p>
             </div>
-            <label>Email address<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="manager@example.com" required /></label>
+                <label>{localMode ? 'Username' : 'Email address'}<input type={localMode ? 'text' : 'email'} autoComplete="username" value={loginName} onChange={(event) => setLoginName(event.target.value)} placeholder={localMode ? 'ShahzaibKS' : 'manager@example.com'} required /></label>
             <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
             {error && <p className="admin-alert" role="alert">{error}</p>}
             <button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Checking credentials…' : <>Sign in securely <ArrowRight size={15} /></>}</button>
@@ -666,7 +666,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
       <main className="admin-main">
         <header className="admin-topbar">
           <div><p className="admin-kicker">Mian Tailor And Design / Admin</p><h1>{sections.find((item) => item.id === section)?.label}</h1></div>
-          <div className="admin-topbar-actions"><span className={localMode ? 'admin-sync-state local' : 'admin-sync-state'}><i />{localMode ? 'SQL customer directory · local catalog' : 'Supabase live sync'}</span>{(session?.user.email || localAdminUser?.email) && <span className="admin-user-email">{session?.user.email || localAdminUser?.email}</span>}<button className="admin-icon-button" type="button" onClick={() => void refreshData()} aria-label="Refresh data" disabled={loading}><RefreshCw size={16} /></button></div>
+          <div className="admin-topbar-actions"><span className={localMode ? 'admin-sync-state local' : 'admin-sync-state'}><i />{localMode ? 'SQL customer directory · local catalog' : 'Supabase live sync'}</span>{(session?.user.email || localAdminUser?.username) && <span className="admin-user-email">{session?.user.email || localAdminUser?.username}</span>}<button className="admin-icon-button" type="button" onClick={() => void refreshData()} aria-label="Refresh data" disabled={loading}><RefreshCw size={16} /></button></div>
         </header>
         {error && <p className="admin-alert admin-page-alert" role="alert">{error}</p>}
         {notice && <p className="admin-notice" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message"><X size={14} /></button></p>}
