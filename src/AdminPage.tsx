@@ -9,8 +9,10 @@ import { getLocalAdminSnapshot, readLocalConversations, readLocalMessages, readL
 import './Admin.css'
 
 type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'support' | 'settings'
+type LocalAdminUser = { email: string }
 type AccountDirectoryCustomer = { id: number; fullName: string; email: string; createdAt: string }
 type AccountDirectoryResponse = { customers?: AccountDirectoryCustomer[]; error?: string }
+type AdminSessionResponse = { user?: LocalAdminUser | null; error?: string }
 type ProductDraft = {
   id: string
   name: string
@@ -88,7 +90,8 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     () => getLocalAdminSnapshot(starterProducts),
   )
   const [session, setSession] = useState<Session | null>(null)
-  const [authReady, setAuthReady] = useState(false)
+  const [localAdminUser, setLocalAdminUser] = useState<LocalAdminUser | null>(null)
+  const [authReady, setAuthReady] = useState(!localMode)
   const [section, setSection] = useState<AdminSection>(initialSection)
   const [storedProducts, setProducts] = useState<Product[]>(() => localMode ? localSnapshot.products : [])
   const [storedRequests, setRequests] = useState<FittingRequest[]>(() => localMode ? localSnapshot.requests : [])
@@ -149,6 +152,20 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         setConversations(readLocalConversations())
         setSupportMessages(readLocalMessages())
         setWhatsAppNumber(readLocalWhatsAppNumber())
+        try {
+          const response = await fetch('/api/admin/customers')
+          const result = await response.json() as AccountDirectoryResponse
+          if (!response.ok) throw new Error(result.error ?? 'Could not load customer accounts.')
+          setCustomerProfiles((result.customers ?? []).map((customer) => ({
+            id: `account-${customer.id}`,
+            email: customer.email,
+            full_name: customer.fullName,
+            created_at: customer.createdAt,
+          })))
+          setCustomerLoadError('')
+        } catch (directoryError) {
+          setCustomerLoadError(directoryError instanceof Error ? directoryError.message : 'Could not load customer accounts.')
+        }
         return
       }
       if (!supabase) return
@@ -207,6 +224,21 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   }, [localMode, session, starterProducts])
 
   useEffect(() => {
+    if (!localMode) return
+    let mounted = true
+    void fetch('/api/admin/session').then(async (response) => {
+      const result = await response.json() as AdminSessionResponse
+      if (!response.ok) throw new Error(result.error ?? 'Could not check manager session.')
+      if (mounted) setLocalAdminUser(result.user ?? null)
+    }).catch((sessionError: unknown) => {
+      if (mounted) setError(sessionError instanceof Error ? sessionError.message : 'Could not check manager session.')
+    }).finally(() => {
+      if (mounted) setAuthReady(true)
+    })
+    return () => { mounted = false }
+  }, [localMode])
+
+  useEffect(() => {
     if (!supabase) return
     let mounted = true
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -232,15 +264,19 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   }, [])
 
   useEffect(() => {
-    if (localMode || !supabase || session?.user.app_metadata.role !== 'admin') return
+    if (localMode) {
+      if (localAdminUser) void Promise.resolve().then(() => refreshData({ silent: true }))
+      return
+    }
+    if (!supabase || session?.user.app_metadata.role !== 'admin') return
     void Promise.resolve().then(() => refreshData({ silent: true }))
-  }, [localMode, refreshData, session])
+  }, [localAdminUser, localMode, refreshData, session])
 
   useEffect(() => {
-    if (localMode || section !== 'customers' || session?.user.app_metadata.role !== 'admin') return
+    if (section !== 'customers' || (localMode ? !localAdminUser : session?.user.app_metadata.role !== 'admin')) return
     const interval = window.setInterval(() => { void refreshData({ silent: true }) }, 30_000)
     return () => window.clearInterval(interval)
-  }, [localMode, refreshData, section, session])
+  }, [localAdminUser, localMode, refreshData, section, session])
 
   useEffect(() => {
     if (localMode || !supabase || session?.user.app_metadata.role !== 'admin') return
@@ -258,16 +294,24 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!supabase) return
     setError('')
     setSaving(true)
     setLoading(true)
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-      if (signInError) {
-        setError(signInError.message)
-        setLoading(false)
+      if (localMode) {
+        const response = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        })
+        const result = await response.json() as AdminSessionResponse
+        if (!response.ok) throw new Error(result.error ?? 'Could not sign in.')
+        setLocalAdminUser(result.user ?? null)
+        return
       }
+      if (!supabase) throw new Error('Admin authentication is unavailable.')
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInError) throw signInError
     } catch (signInError) {
       setError(signInError instanceof Error ? signInError.message : 'Could not sign in.')
       setLoading(false)
@@ -278,8 +322,16 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   }
 
   async function signOut() {
-    if (!supabase) return
     try {
+      if (localMode) {
+        const response = await fetch('/api/admin/logout', { method: 'POST' })
+        const result = await response.json() as AdminSessionResponse
+        if (!response.ok) throw new Error(result.error ?? 'Could not sign out.')
+        setLocalAdminUser(null)
+        setCustomerProfiles([])
+        return
+      }
+      if (!supabase) throw new Error('Admin authentication is unavailable.')
       const { error: signOutError } = await supabase.auth.signOut()
       if (signOutError) setError(signOutError.message)
     } catch (signOutError) {
@@ -543,32 +595,18 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     ? supportMessages.filter((item) => item.conversation_id === selectedConversation.id)
     : []
 
-  if (localMode && !import.meta.env.DEV) {
-    return (
-      <div className="admin-gate">
-        <div className="admin-gate-card">
-          <span className="admin-brand-mark">M</span>
-          <p className="admin-kicker">Mian Tailor And Design</p>
-          <h1>Admin setup required</h1>
-          <p>The production admin panel requires Supabase authentication. Configure the site and account service with the Supabase project, then sign in with an admin account.</p>
-          <Link className="admin-back-link" to="/"><ArrowLeft size={15} /> Back to storefront</Link>
-        </div>
-      </div>
-    )
+  if (!authReady) {
+    return <div className="admin-loading">Checking manager session…</div>
   }
 
-  if (!localMode && !authReady) {
-    return <div className="admin-loading">Checking admin session…</div>
-  }
-
-  if (!localMode && !session) {
+  if ((localMode && !localAdminUser) || (!localMode && !session)) {
     return (
       <div className="admin-gate">
         <form className="admin-login-card" onSubmit={signIn}>
           <span className="admin-brand-mark">M</span>
           <p className="admin-kicker">Mian Tailor And Design</p>
           <h1>Welcome back.</h1>
-          <p>Sign in with an admin account to manage the collection.</p>
+          <p>Sign in with your manager account to view customer registrations.</p>
           <label>Email address<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
           <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
           {error && <p className="admin-alert" role="alert">{error}</p>}
@@ -604,13 +642,13 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
           {sections.map(({ id, label, icon: Icon }) => <button className={section === id ? 'admin-nav-item active' : 'admin-nav-item'} key={id} type="button" onClick={() => { navigateSection(id); setNotice('') }}><Icon size={17} />{label}{id === 'fittings' && requests.some((request) => request.status === 'new') && <span className="admin-nav-count">{requests.filter((request) => request.status === 'new').length}</span>}{id === 'support' && conversations.some((conversation) => conversation.status === 'open') && <span className="admin-nav-count">{conversations.filter((conversation) => conversation.status === 'open').length}</span>}</button>)}
         </nav>
         <Link className="admin-back-link" to="/"><ArrowLeft size={15} /> View storefront</Link>
-        {session && <button className="admin-signout" type="button" onClick={signOut}><LogOut size={16} /> Sign out</button>}
+        {(session || localAdminUser) && <button className="admin-signout" type="button" onClick={() => void signOut()}><LogOut size={16} /> Sign out</button>}
       </aside>
 
       <main className="admin-main">
         <header className="admin-topbar">
           <div><p className="admin-kicker">Mian Tailor And Design / Admin</p><h1>{sections.find((item) => item.id === section)?.label}</h1></div>
-          <div className="admin-topbar-actions"><span className={localMode ? 'admin-sync-state local' : 'admin-sync-state'}><i />{localMode ? 'Saved on this device' : 'Supabase live sync'}</span>{session && <span className="admin-user-email">{session.user.email}</span>}<button className="admin-icon-button" type="button" onClick={() => void refreshData()} aria-label="Refresh data" disabled={loading}><RefreshCw size={16} /></button></div>
+          <div className="admin-topbar-actions"><span className={localMode ? 'admin-sync-state local' : 'admin-sync-state'}><i />{localMode ? 'SQL customer directory · local catalog' : 'Supabase live sync'}</span>{(session?.user.email || localAdminUser?.email) && <span className="admin-user-email">{session?.user.email || localAdminUser?.email}</span>}<button className="admin-icon-button" type="button" onClick={() => void refreshData()} aria-label="Refresh data" disabled={loading}><RefreshCw size={16} /></button></div>
         </header>
         {error && <p className="admin-alert admin-page-alert" role="alert">{error}</p>}
         {notice && <p className="admin-notice" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message"><X size={14} /></button></p>}
@@ -622,7 +660,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
             <div className="admin-stat-grid">
               <article><span className="admin-stat-icon"><Package size={18} /></span><p>Products</p><strong>{products.length}</strong><small>{products.filter((product) => product.active !== false).length} active in storefront</small></article>
               <article><span className="admin-stat-icon"><Scissors size={18} /></span><p>Fitting requests</p><strong>{requests.length}</strong><small>{requests.filter((request) => request.status === 'new').length} new to review</small></article>
-              <article><span className="admin-stat-icon"><Users size={18} /></span><p>Customers</p><strong>{localMode ? '—' : customerProfiles.length}</strong><small>{localMode ? 'Available with admin setup' : 'Registered customer accounts'}</small></article>
+              <article><span className="admin-stat-icon"><Users size={18} /></span><p>Customers</p><strong>{customerProfiles.length}</strong><small>Registered customer accounts</small></article>
               <article><span className="admin-stat-icon"><Headset size={18} /></span><p>Live support</p><strong>{conversations.filter((item) => item.status === 'open').length}</strong><small>{supportMessages.length} messages across all chats</small></article>
               <article><span className="admin-stat-icon"><ShoppingBag size={18} /></span><p>Collection value</p><strong>{money.format(products.filter((product) => product.active !== false).reduce((total, product) => total + product.price, 0))}</strong><small>Combined price of active designs</small></article>
             </div>
@@ -665,10 +703,9 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
           <section className="admin-content">
             <div className="admin-panel">
               <div className="admin-panel-heading"><div><p className="admin-kicker">Customer accounts</p><h2>{customerProfiles.length} registered customers</h2></div></div>
-              {localMode ? <p className="admin-empty">Customer accounts are available to signed-in managers when the production admin backend is configured.</p>
-                : <>{customerLoadError && <p className="admin-alert admin-section-alert" role="alert">Some customer accounts could not be loaded. Check the Supabase setup and account API configuration, then refresh. Details: {customerLoadError}</p>}
-                  {customerProfiles.length === 0 ? <p className="admin-empty">No registered customer accounts yet. New registrations will appear here.</p>
-                    : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Name</th><th>Email</th><th>Registered</th></tr></thead><tbody>{customerProfiles.map((customer) => <tr key={customer.id}><td>{customer.full_name || 'Customer'}</td><td><a href={`mailto:${customer.email}`}>{customer.email}</a></td><td>{formatAdminDate(customer.created_at)}</td></tr>)}</tbody></table></div>}</>}
+              {customerLoadError && <p className="admin-alert admin-section-alert" role="alert">Could not load customer accounts. Check that the SQL account API is running, then refresh. Details: {customerLoadError}</p>}
+              {customerProfiles.length === 0 ? <p className="admin-empty">No registered customer accounts yet. New registrations will appear here.</p>
+                : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Name</th><th>Email</th><th>Registered</th></tr></thead><tbody>{customerProfiles.map((customer) => <tr key={customer.id}><td>{customer.full_name || 'Customer'}</td><td><a href={`mailto:${customer.email}`}>{customer.email}</a></td><td>{formatAdminDate(customer.created_at)}</td></tr>)}</tbody></table></div>}
             </div>
           </section>
         )}
@@ -716,8 +753,8 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               </div>
             </form>
             <div className="admin-panel admin-settings-panel">
-              <div className="admin-panel-heading"><div><p className="admin-kicker">Data and live updates</p><h2>{localMode ? 'Browser demo mode' : 'Supabase live mode'}</h2></div></div>
-              <div className="admin-settings-content"><p>{localMode ? 'Admin edits, fitting requests, and support messages are saved in this browser and shared between tabs on this device. Add Supabase credentials and apply supabase/schema.sql to securely sync across customers and devices.' : 'Live chat, catalog changes, and appointment updates are synchronized through Supabase Realtime. Keep row-level security enabled and never expose a service-role key in the browser.'}</p></div>
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Data and live updates</p><h2>{localMode ? 'SQLite accounts · browser demo data' : 'Supabase live mode'}</h2></div></div>
+              <div className="admin-settings-content"><p>{localMode ? 'Customer registrations and manager sessions are stored in the account service SQLite database. Product edits, fitting requests, and demo support messages are saved in this browser.' : 'Live chat, catalog changes, and appointment updates are synchronized through Supabase Realtime. The self-hosted account database remains available for website customer registrations.'}</p></div>
             </div>
           </section>
         )}

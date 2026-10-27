@@ -5,7 +5,6 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { DatabaseSync } from 'node:sqlite'
-import { createClient } from '@supabase/supabase-js'
 
 if (existsSync(resolve('.env'))) process.loadEnvFile(resolve('.env'))
 
@@ -29,18 +28,18 @@ function cookieValue(request, name) {
   return value ? decodeURIComponent(value.slice(name.length + 1)) : null
 }
 
-function setSessionCookie(response, token) {
+function setSessionCookie(response, token, name = 'mian_session') {
   const secure = process.env.AUTH_COOKIE_SECURE
     ? process.env.AUTH_COOKIE_SECURE === 'true'
     : process.env.NODE_ENV === 'production'
-  response.setHeader('Set-Cookie', `mian_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${sessionDurationSeconds}${secure ? '; Secure' : ''}`)
+  response.setHeader('Set-Cookie', `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${sessionDurationSeconds}${secure ? '; Secure' : ''}`)
 }
 
-function clearSessionCookie(response) {
+function clearSessionCookie(response, name = 'mian_session') {
   const secure = process.env.AUTH_COOKIE_SECURE
     ? process.env.AUTH_COOKIE_SECURE === 'true'
     : process.env.NODE_ENV === 'production'
-  response.setHeader('Set-Cookie', `mian_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`)
+  response.setHeader('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`)
 }
 
 function normalizeEmail(value) {
@@ -69,7 +68,8 @@ function allowSameOrigin(request, response, next) {
 
 export function createAccountApp({
   dbPath = process.env.AUTH_DB_PATH ?? './data/accounts.sqlite',
-  verifyAdminToken,
+  adminEmail = process.env.ADMIN_EMAIL,
+  adminPassword = process.env.ADMIN_PASSWORD,
 } = {}) {
   const databasePath = resolve(dbPath)
   mkdirSync(dirname(databasePath), { recursive: true })
@@ -89,18 +89,18 @@ export function createAccountApp({
       expires_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS customer_sessions_expiry ON customer_sessions(expires_at);
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+      token_hash TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS admin_sessions_expiry ON admin_sessions(expires_at);
   `)
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
-  const supabaseAuth = supabaseUrl && supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false } })
-    : null
 
   const app = express()
   app.disable('x-powered-by')
   app.set('trust proxy', 1)
   app.use(express.json({ limit: '10kb', strict: true }))
-  app.use('/api/account', (_request, response, next) => {
+  app.use(['/api/account', '/api/admin'], (_request, response, next) => {
     response.setHeader('Cache-Control', 'no-store')
     next()
   })
@@ -133,6 +133,10 @@ export function createAccountApp({
     JOIN customer_accounts ON customer_accounts.id = customer_sessions.account_id
     WHERE customer_sessions.token_hash = ? AND customer_sessions.expires_at > ?
   `)
+  const findAdminSession = database.prepare(`
+    SELECT token_hash FROM admin_sessions
+    WHERE token_hash = ? AND expires_at > ?
+  `)
 
   function createSession(account, response) {
     const token = randomBytes(32).toString('base64url')
@@ -140,6 +144,13 @@ export function createAccountApp({
       .run(hashToken(token), account.id, Date.now() + sessionDurationSeconds * 1000)
     setSessionCookie(response, token)
     return safeUser(account)
+  }
+
+  function getAdminSession(request, response) {
+    const token = cookieValue(request, 'mian_admin_session')
+    const session = token ? findAdminSession.get(hashToken(token), Date.now()) : null
+    if (!session && token) clearSessionCookie(response, 'mian_admin_session')
+    return session ? { email: normalizeEmail(adminEmail) } : null
   }
 
   app.get('/api/account', (request, response) => {
@@ -150,40 +161,64 @@ export function createAccountApp({
     response.json({ user: account ? safeUser(account) : null })
   })
 
-  app.get('/api/admin/customers', async (request, response, next) => {
-    const token = request.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]
-    if (!token) {
-      response.status(401).json({ error: 'Admin sign-in is required to view customer accounts.' })
+  app.get('/api/admin/session', (request, response) => {
+    database.prepare('DELETE FROM admin_sessions WHERE expires_at <= ?').run(Date.now())
+    response.json({ user: getAdminSession(request, response) })
+  })
+
+  app.post('/api/admin/login', allowSameOrigin, rateLimit, async (request, response, next) => {
+    const body = request.body && typeof request.body === 'object' ? request.body : {}
+    const email = normalizeEmail(body.email)
+    const password = body.password
+    if (!normalizeEmail(adminEmail) || typeof adminPassword !== 'string' || adminPassword.length < 12) {
+      response.status(503).json({ error: 'Set ADMIN_EMAIL and a manager password of at least 12 characters in the account service environment.' })
       return
     }
-    if (!verifyAdminToken && !supabaseAuth) {
-      response.status(503).json({ error: 'Customer directory requires Supabase admin authentication to be configured on the account service.' })
+    if (!email || typeof password !== 'string' || password.length > 128) {
+      response.status(400).json({ error: 'Enter a valid manager email and password.' })
       return
     }
     try {
-      const user = verifyAdminToken
-        ? await verifyAdminToken(token)
-        : await supabaseAuth.auth.getUser(token).then(({ data, error }) => {
-            if (error) return null
-            return data.user
-          })
-      if (!user) {
-        response.status(401).json({ error: 'Admin session is invalid or expired. Sign in again.' })
+      const salt = randomBytes(passwordSaltBytes)
+      const [providedHash, configuredHash] = await Promise.all([
+        scrypt(password, salt, passwordHashBytes, scryptOptions),
+        scrypt(adminPassword, salt, passwordHashBytes, scryptOptions),
+      ])
+      const valid = email === normalizeEmail(adminEmail)
+        && providedHash.length === configuredHash.length
+        && timingSafeEqual(providedHash, configuredHash)
+      if (!valid) {
+        response.status(401).json({ error: 'Email or password is incorrect.' })
         return
       }
-      if (user.app_metadata?.role !== 'admin') {
-        response.status(403).json({ error: 'Admin access is required to view customer accounts.' })
-        return
-      }
-      const customers = database.prepare(`
-        SELECT id, full_name AS fullName, email, created_at AS createdAt
-        FROM customer_accounts
-        ORDER BY datetime(created_at) DESC, id DESC
-      `).all()
-      response.json({ customers })
+      const token = randomBytes(32).toString('base64url')
+      database.prepare('INSERT INTO admin_sessions (token_hash, expires_at) VALUES (?, ?)')
+        .run(hashToken(token), Date.now() + sessionDurationSeconds * 1000)
+      setSessionCookie(response, token, 'mian_admin_session')
+      response.json({ user: { email: normalizeEmail(adminEmail) } })
     } catch (error) {
       next(error)
     }
+  })
+
+  app.post('/api/admin/logout', allowSameOrigin, (request, response) => {
+    const token = cookieValue(request, 'mian_admin_session')
+    if (token) database.prepare('DELETE FROM admin_sessions WHERE token_hash = ?').run(hashToken(token))
+    clearSessionCookie(response, 'mian_admin_session')
+    response.json({ user: null })
+  })
+
+  app.get('/api/admin/customers', (request, response) => {
+    if (!getAdminSession(request, response)) {
+      response.status(401).json({ error: 'Manager sign-in is required to view customer accounts.' })
+      return
+    }
+    const customers = database.prepare(`
+      SELECT id, full_name AS fullName, email, created_at AS createdAt
+      FROM customer_accounts
+      ORDER BY datetime(created_at) DESC, id DESC
+    `).all()
+    response.json({ customers })
   })
 
   app.post('/api/account/register', allowSameOrigin, rateLimit, async (request, response, next) => {

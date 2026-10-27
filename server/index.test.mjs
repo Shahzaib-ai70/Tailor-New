@@ -14,11 +14,8 @@ before(async () => {
   directory = mkdtempSync(join(tmpdir(), 'mian-account-test-'))
   const accountApp = createAccountApp({
     dbPath: join(directory, 'accounts.sqlite'),
-    verifyAdminToken: async (token) => {
-      if (token === 'manager-token') return { app_metadata: { role: 'admin' } }
-      if (token === 'customer-token') return { app_metadata: { role: 'customer' } }
-      return null
-    },
+    adminEmail: 'manager@example.com',
+    adminPassword: 'a-manager-password',
   })
   database = accountApp.database
   server = accountApp.app.listen(0, '127.0.0.1')
@@ -70,25 +67,46 @@ test('duplicate registration and invalid login are rejected', async () => {
   assert.equal(wrongPassword.status, 401)
 })
 
-test('only an authenticated admin can view registered customer accounts', async () => {
+test('manager sign-in protects the SQL customer directory and persists the session', async () => {
   const unauthenticated = await fetch(`${origin}/api/admin/customers`)
   assert.equal(unauthenticated.status, 401)
 
-  const customer = await fetch(`${origin}/api/admin/customers`, {
-    headers: { Authorization: 'Bearer customer-token' },
+  const invalidLogin = await fetch(`${origin}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ email: 'manager@example.com', password: 'wrong-password' }),
   })
-  assert.equal(customer.status, 403)
+  assert.equal(invalidLogin.status, 401)
 
-  const manager = await fetch(`${origin}/api/admin/customers`, {
-    headers: { Authorization: 'Bearer manager-token' },
+  const login = await fetch(`${origin}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ email: 'MANAGER@example.com', password: 'a-manager-password' }),
   })
-  assert.equal(manager.status, 200)
-  const result = await manager.json()
+  assert.equal(login.status, 200)
+  assert.equal((await login.json()).user.email, 'manager@example.com')
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+
+  const session = await fetch(`${origin}/api/admin/session`, { headers: { Cookie: cookie } })
+  assert.equal((await session.json()).user.email, 'manager@example.com')
+
+  const directory = await fetch(`${origin}/api/admin/customers`, { headers: { Cookie: cookie } })
+  assert.equal(directory.status, 200)
+  const result = await directory.json()
   assert.deepEqual(result.customers.map(({ fullName, email }) => ({ fullName, email })), [
     { fullName: 'Test Customer', email: 'test@example.com' },
   ])
   assert.ok(result.customers[0].createdAt)
   assert.ok(!JSON.stringify(result).includes('password_hash'))
+
+  const logout = await fetch(`${origin}/api/admin/logout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie },
+    body: '{}',
+  })
+  assert.equal(logout.status, 200)
+  const afterLogout = await fetch(`${origin}/api/admin/customers`, { headers: { Cookie: cookie } })
+  assert.equal(afterLogout.status, 401)
 })
 
 test('logout clears the session and cross-origin mutations are rejected', async () => {
