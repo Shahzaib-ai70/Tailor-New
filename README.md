@@ -31,7 +31,7 @@ Node.js 22.5 or newer is required for the built-in SQLite account store.
 
 Open `/admin` and sign in with the manager username and password configured for the account API. Supabase is not required for manager authentication or the customer directory. The account API verifies the manager credentials and stores hashed-token sessions in SQLite; customer registrations are read from the same SQLite database used by `/account`. Password hashes are never returned by the customer-directory API.
 
-Set `ADMIN_USERNAME` and a unique `ADMIN_PASSWORD` of at least 12 characters that is different from the username in the account API environment before starting it. `AUTH_DB_PATH` defaults to `./data/accounts.sqlite`; the database file is excluded from Git, so back it up and keep it on persistent storage. Catalog edits, fitting requests, and demo support data remain browser-local when Supabase is not configured.
+Set `ADMIN_USERNAME` and a unique `ADMIN_PASSWORD` of at least 12 characters that is different from the username in the account API environment before starting it. `AUTH_DB_PATH` defaults to `./data/accounts.sqlite`; the database file is excluded from Git, so back it up and keep it on persistent storage. With Supabase unset, customer support conversations and read state are stored in SQLite. Signed-in customers see their own account conversation across devices; guest chats use a private browser session. Catalog edits, fitting requests, and WhatsApp settings remain browser-local.
 
 ### VPS account API deployment
 
@@ -59,7 +59,7 @@ After changing Nginx configuration, run `sudo nginx -t` and then `sudo systemctl
 
 For subsequent code updates, run `git pull --ff-only origin main`, `npm ci`, and `npm run build`, then restart the API with `pm2 restart mian-tailor-auth --update-env`. The self-hosted account flow does not send email confirmations or password-reset emails; those require an email delivery service.
 
-Supabase support for catalog, fitting requests, and live support is optional. The standalone `/account` registration/login flow and `/admin` customer list use the self-hosted SQLite API.
+Supabase support for catalog, fitting requests, and live support is optional. Without Supabase, `/account`, the `/admin` customer list, and customer support chat use the self-hosted SQLite API. The Admin support inbox refreshes from SQLite and records when the manager has read customer messages, so read conversations no longer show an unread indicator.
 
 ## Checks
 

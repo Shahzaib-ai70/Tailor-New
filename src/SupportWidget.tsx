@@ -2,25 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import { MessageCircle, Send, X } from 'lucide-react'
 import type { SupportConversation, SupportMessage } from './types'
 import { customerChatSupabase, supabase } from './lib/supabase'
+import { readApiResponse } from './lib/api-response'
 import {
-  readLocalConversations,
-  readLocalMessages,
   readLocalWhatsAppNumber,
   subscribeToLocalAdminData,
-  writeLocalConversations,
-  writeLocalMessages,
 } from './lib/admin-store'
 import './SupportWidget.css'
 
-const customerIdKey = 'mian-tailor.support-customer-id.v1'
-
-function getCustomerId(): string {
-  let id = localStorage.getItem(customerIdKey)
-  if (!id) {
-    id = crypto.randomUUID()
-    localStorage.setItem(customerIdKey, id)
-  }
-  return id
+type LocalSupportResponse = {
+  conversation?: SupportConversation
+  messages?: SupportMessage[]
+  error?: string
 }
 
 export default function SupportWidget() {
@@ -46,11 +38,6 @@ export default function SupportWidget() {
       const unsubscribe = subscribeToLocalAdminData(() => {
         try {
           setWhatsAppNumber(readLocalWhatsAppNumber())
-          if (conversation) {
-            setMessages(readLocalMessages().filter((item) => item.conversation_id === conversation.id))
-            const updated = readLocalConversations().find((item) => item.id === conversation.id)
-            if (updated) setConversation(updated)
-          }
         } catch (syncError) {
           setError(syncError instanceof Error ? syncError.message : 'Could not refresh support messages.')
         }
@@ -72,12 +59,13 @@ export default function SupportWidget() {
         else setWhatsAppNumber(data?.value ?? '')
       })
     return () => { void client.removeChannel(settingsChannel) }
-  }, [localMode, conversation])
+  }, [localMode])
 
   useEffect(() => {
     if (!open) return
     let active = true
     let messageChannel: ReturnType<NonNullable<typeof supabase>['channel']> | undefined
+    let pollInterval: number | undefined
     const client = customerChatSupabase
 
     async function initializeChat() {
@@ -85,25 +73,26 @@ export default function SupportWidget() {
       setError('')
       try {
         if (localMode) {
-          const customerId = getCustomerId()
-          let current = readLocalConversations().find((item) => item.customer_id === customerId && item.status === 'open')
-          if (!current) {
-            current = {
-              id: crypto.randomUUID(),
-              customer_id: customerId,
-              customer_name: customerNameRef.current.trim() || 'Store visitor',
-              status: 'open',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
+          async function refreshSupportChat() {
+            const response = await fetch('/api/support')
+            const result = await readApiResponse<LocalSupportResponse>(response)
+            if (!response.ok) throw new Error(result.error ?? 'Could not connect to customer care.')
+            if (!result.conversation) throw new Error('The support service did not return a conversation.')
+            if (active) {
+              setConversation(result.conversation)
+              setMessages(result.messages ?? [])
+              if (result.conversation.customer_name !== 'Store visitor') {
+                setCustomerName((previous) => previous || result.conversation!.customer_name)
+              }
             }
-            writeLocalConversations([...readLocalConversations(), current])
-          } else if (customerNameRef.current.trim() && current.customer_name === 'Store visitor') {
-            current = { ...current, customer_name: customerNameRef.current.trim() }
-            writeLocalConversations(readLocalConversations().map((item) => item.id === current!.id ? current! : item))
           }
+          await refreshSupportChat()
           if (active) {
-            setConversation(current)
-            setMessages(readLocalMessages().filter((item) => item.conversation_id === current!.id))
+            pollInterval = window.setInterval(() => {
+              void refreshSupportChat().catch((refreshError: unknown) => {
+                if (active) setError(refreshError instanceof Error ? refreshError.message : 'Could not refresh support messages.')
+              })
+            }, 5000)
           }
           return
         }
@@ -170,6 +159,7 @@ export default function SupportWidget() {
     void initializeChat()
     return () => {
       active = false
+      if (pollInterval !== undefined) window.clearInterval(pollInterval)
       if (messageChannel && client) void client.removeChannel(messageChannel)
     }
   }, [open, localMode])
@@ -186,16 +176,15 @@ export default function SupportWidget() {
     setError('')
     try {
       if (localMode) {
-        const nextMessage: SupportMessage = {
-          id: crypto.randomUUID(),
-          conversation_id: conversation.id,
-          sender_id: conversation.customer_id,
-          sender_role: 'customer',
-          body,
-          created_at: new Date().toISOString(),
-        }
-        writeLocalMessages([...readLocalMessages(), nextMessage])
-        setMessages((previous) => previous.some((item) => item.id === nextMessage.id) ? previous : [...previous, nextMessage])
+        const response = await fetch('/api/support/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body }),
+        })
+        const result = await readApiResponse<{ message?: SupportMessage; error?: string }>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not send your message.')
+        if (!result.message) throw new Error('The support service did not confirm your message.')
+        setMessages((previous) => previous.some((item) => item.id === result.message!.id) ? previous : [...previous, result.message!])
         setMessage('')
         return
       }
@@ -222,9 +211,14 @@ export default function SupportWidget() {
     if (!conversation || !name || name === conversation.customer_name) return
     try {
       if (localMode) {
-        const updated = { ...conversation, customer_name: name }
-        writeLocalConversations(readLocalConversations().map((item) => item.id === updated.id ? updated : item))
-        setConversation(updated)
+        const response = await fetch('/api/support/name', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        })
+        const result = await readApiResponse<{ conversation?: SupportConversation; error?: string }>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not update your name.')
+        if (result.conversation) setConversation(result.conversation)
         return
       }
       if (!customerChatSupabase) return
@@ -248,7 +242,7 @@ export default function SupportWidget() {
       {open && <section className="support-panel" aria-label="Customer service chat">
         <header className="support-header">
           <span className="support-avatar"><MessageCircle size={19} /></span>
-          <div><strong>Customer care</strong><span><i />{localMode ? 'Demo chat · saved on this device' : 'Live team chat'}</span></div>
+          <div><strong>Customer care</strong><span><i />{localMode ? 'Secure chat · private to your account' : 'Live team chat'}</span></div>
           <button type="button" onClick={() => setOpen(false)} aria-label="Close customer service chat"><X size={19} /></button>
         </header>
         <label className="support-name-label">Your name <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} onBlur={() => void saveCustomerName()} placeholder="How should we address you?" maxLength={80} /></label>

@@ -6,7 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import type { CustomerProfile, FittingRequest, Product, SupportConversation, SupportMessage } from './types'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { readApiResponse } from './lib/api-response'
-import { getLocalAdminSnapshot, readLocalConversations, readLocalMessages, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalConversations, writeLocalMessages, writeLocalProducts, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
+import { getLocalAdminSnapshot, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalProducts, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
 import './Admin.css'
 
 type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'support' | 'settings'
@@ -14,6 +14,7 @@ type LocalAdminUser = { username: string }
 type AccountDirectoryCustomer = { id: number; fullName: string; email: string; createdAt: string }
 type AccountDirectoryResponse = { customers?: AccountDirectoryCustomer[]; error?: string }
 type AdminSessionResponse = { user?: LocalAdminUser | null; error?: string }
+type AdminSupportResponse = { conversations?: SupportConversation[]; messages?: SupportMessage[]; error?: string }
 type ProductDraft = {
   id: string
   name: string
@@ -55,6 +56,13 @@ function formatAdminDate(value: string) {
 function currentTimestamp() {
   return new Date().toISOString()
 }
+
+function hasUnreadCustomerMessages(conversation: SupportConversation, messages: SupportMessage[]) {
+  return messages.some((message) => message.conversation_id === conversation.id
+    && message.sender_role === 'customer'
+    && (!conversation.admin_read_at || message.created_at > conversation.admin_read_at))
+}
+
 const sections: { id: AdminSection; label: string; icon: typeof Package }[] = [
   { id: 'overview', label: 'Overview', icon: ShoppingBag },
   { id: 'products', label: 'Products', icon: Package },
@@ -96,8 +104,8 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const [section, setSection] = useState<AdminSection>(initialSection)
   const [storedProducts, setProducts] = useState<Product[]>(() => localMode ? localSnapshot.products : [])
   const [storedRequests, setRequests] = useState<FittingRequest[]>(() => localMode ? localSnapshot.requests : [])
-  const [storedConversations, setConversations] = useState<SupportConversation[]>(() => localMode ? localSnapshot.conversations : [])
-  const [storedSupportMessages, setSupportMessages] = useState<SupportMessage[]>(() => localMode ? localSnapshot.messages : [])
+  const [storedConversations, setConversations] = useState<SupportConversation[]>([])
+  const [storedSupportMessages, setSupportMessages] = useState<SupportMessage[]>([])
   const [customerProfiles, setCustomerProfiles] = useState<CustomerProfile[]>([])
   const [customerLoadError, setCustomerLoadError] = useState('')
   const [selectedConversationId, setSelectedConversationId] = useState(() => searchParams.get('conversation') ?? '')
@@ -115,8 +123,8 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const [notice, setNotice] = useState('')
   const products = localMode ? localSnapshot.products : storedProducts
   const requests = localMode ? localSnapshot.requests : storedRequests
-  const conversations = localMode ? localSnapshot.conversations : storedConversations
-  const supportMessages = localMode ? localSnapshot.messages : storedSupportMessages
+  const conversations = storedConversations
+  const supportMessages = storedSupportMessages
   const whatsAppNumber = whatsAppDraft ?? (localMode ? localSnapshot.whatsappNumber : storedWhatsAppNumber)
 
   function navigateSection(nextSection: AdminSection) {
@@ -133,6 +141,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     nextParams.set('section', 'support')
     nextParams.set('conversation', conversationId)
     setSearchParams(nextParams, { replace: true })
+    if (localMode) void markConversationRead(conversationId)
   }
 
   function handleRealtimeStatus(status: string) {
@@ -150,9 +159,12 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
       if (localMode) {
         setProducts(readLocalProducts(starterProducts))
         setRequests(readLocalRequests())
-        setConversations(readLocalConversations())
-        setSupportMessages(readLocalMessages())
         setWhatsAppNumber(readLocalWhatsAppNumber())
+        const supportResponse = await fetch('/api/admin/support')
+        const supportResult = await readApiResponse<AdminSupportResponse>(supportResponse)
+        if (!supportResponse.ok) throw new Error(supportResult.error ?? 'Could not load customer conversations.')
+        setConversations(supportResult.conversations ?? [])
+        setSupportMessages(supportResult.messages ?? [])
         try {
           const response = await fetch('/api/admin/customers')
           const result = await readApiResponse<AccountDirectoryResponse>(response)
@@ -501,19 +513,18 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     try {
       const body = reply.trim()
       if (localMode) {
-        const nextMessage: SupportMessage = {
-          id: crypto.randomUUID(),
-          conversation_id: activeConversation.id,
-          sender_id: 'admin',
-          sender_role: 'admin',
-          body,
-          created_at: currentTimestamp(),
+        const response = await fetch(`/api/admin/support/${encodeURIComponent(activeConversation.id)}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body }),
+        })
+        const result = await readApiResponse<{ message?: SupportMessage; conversation?: SupportConversation; error?: string }>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not send your reply.')
+        if (!result.message) throw new Error('The support service did not confirm your reply.')
+        setSupportMessages((current) => [...current, result.message!])
+        if (result.conversation) {
+          setConversations((current) => current.map((item) => item.id === result.conversation!.id ? result.conversation! : item))
         }
-        const nextConversations = conversations.map((item) => item.id === activeConversation.id ? { ...item, updated_at: nextMessage.created_at } : item)
-        writeLocalConversations(nextConversations)
-        writeLocalMessages([...supportMessages, nextMessage])
-        setConversations(nextConversations)
-        setSupportMessages((current) => [...current, nextMessage])
       } else {
         if (!supabase) return
         const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -544,9 +555,16 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     setError('')
     try {
       if (localMode) {
-        const next = conversations.map((item) => item.id === conversation.id ? { ...item, status, updated_at: new Date().toISOString() } : item)
-        writeLocalConversations(next)
-        setConversations(next)
+        const response = await fetch(`/api/admin/support/${encodeURIComponent(conversation.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        })
+        const result = await readApiResponse<{ conversation?: SupportConversation; error?: string }>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not update this conversation.')
+        if (result.conversation) {
+          setConversations((current) => current.map((item) => item.id === result.conversation!.id ? result.conversation! : item))
+        }
       } else {
         if (!supabase) return
         const { error: updateError } = await supabase.from('support_conversations').update({ status, updated_at: new Date().toISOString() }).eq('id', conversation.id)
@@ -595,6 +613,41 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const selectedMessages = selectedConversation
     ? supportMessages.filter((item) => item.conversation_id === selectedConversation.id)
     : []
+
+  async function markConversationRead(conversationId: string) {
+    try {
+      const response = await fetch(`/api/admin/support/${encodeURIComponent(conversationId)}/read`, { method: 'POST' })
+      const result = await readApiResponse<{ conversation?: SupportConversation; error?: string }>(response)
+      if (!response.ok) throw new Error(result.error ?? 'Could not mark this conversation as read.')
+      if (result.conversation) {
+        setConversations((current) => current.map((item) => item.id === result.conversation!.id ? result.conversation! : item))
+      }
+    } catch (readError) {
+      setError(readError instanceof Error ? readError.message : 'Could not mark this conversation as read.')
+    }
+  }
+
+  useEffect(() => {
+    if (!localMode || !localAdminUser || section !== 'support') return
+    const interval = window.setInterval(() => {
+      void fetch('/api/admin/support').then(async (response) => {
+        const result = await readApiResponse<AdminSupportResponse>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not refresh customer conversations.')
+        setConversations(result.conversations ?? [])
+        setSupportMessages(result.messages ?? [])
+      }).catch((refreshError: unknown) => {
+        setError(refreshError instanceof Error ? refreshError.message : 'Could not refresh customer conversations.')
+      })
+    }, 5000)
+    return () => window.clearInterval(interval)
+  }, [localAdminUser, localMode, section])
+
+  useEffect(() => {
+    if (!localMode || !localAdminUser || section !== 'support' || !selectedConversation) return
+    if (hasUnreadCustomerMessages(selectedConversation, supportMessages)) {
+      void markConversationRead(selectedConversation.id)
+    }
+  }, [localAdminUser, localMode, section, selectedConversation, supportMessages])
 
   if (!authReady) {
     return <div className="admin-loading">Checking manager session…</div>
@@ -732,12 +785,14 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
           <section className="admin-content">
             <div className="admin-support-layout">
               <div className="admin-panel admin-inbox">
-                <div className="admin-panel-heading"><div><p className="admin-kicker">Customer care</p><h2>Conversations</h2></div><span className={`admin-status ${localMode ? 'new' : 'active'}`}>{localMode ? 'This device' : 'Live sync'}</span></div>
-                {localMode && <p className="admin-local-chat-note">Demo messages stay in this browser profile. Add Supabase to receive chats from customers on other devices.</p>}
-                {conversations.length === 0 ? <p className="admin-empty">No customer chats are stored in this browser yet. Chats from other devices require Supabase live mode.</p> : conversations.map((item) => {
+                <div className="admin-panel-heading"><div><p className="admin-kicker">Customer care</p><h2>Conversations</h2></div><span className="admin-status active">{localMode ? 'SQL chat' : 'Live sync'}</span></div>
+                {localMode && <p className="admin-local-chat-note">Customer conversations are stored in the account service and separated by signed-in account. Guest chats use a private browser session.</p>}
+                {conversations.length === 0 ? <p className="admin-empty">No customer chats yet. New customer messages will appear here.</p> : conversations.map((item) => {
                   const lastMessage = supportMessages.filter((entry) => entry.conversation_id === item.id).at(-1)
-                  return <button className={item.id === selectedConversationId ? 'admin-inbox-item selected' : 'admin-inbox-item'} key={item.id} type="button" onClick={() => selectConversation(item.id)}>
-                    <span className="admin-inbox-item-top"><strong>{item.customer_name || 'Store visitor'}</strong><span className={`admin-status ${item.status}`}>{item.status}</span></span>
+                  const unread = localMode && hasUnreadCustomerMessages(item, supportMessages)
+                  return <button className={item.id === selectedConversation?.id ? 'admin-inbox-item selected' : 'admin-inbox-item'} key={item.id} type="button" onClick={() => selectConversation(item.id)}>
+                    <span className="admin-inbox-item-top"><strong>{item.customer_name || 'Store visitor'}</strong><span className={`admin-status ${unread ? 'new' : item.status}`}>{unread ? 'Unread' : item.status}</span></span>
+                    {item.customer_email && <span className="admin-inbox-preview">{item.customer_email}</span>}
                     <span className="admin-inbox-preview">{lastMessage?.body ?? 'No messages yet'}</span>
                     <time>{formatAdminDateTime(lastMessage?.created_at ?? item.updated_at)}</time>
                   </button>
@@ -746,7 +801,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               <div className="admin-panel admin-chat-panel">
                 {selectedConversation ? <>
                   <div className="admin-panel-heading">
-                    <div><p className="admin-kicker">Live conversation</p><h2>{selectedConversation.customer_name || 'Store visitor'}</h2></div>
+                    <div><p className="admin-kicker">Live conversation</p><h2>{selectedConversation.customer_name || 'Store visitor'}</h2>{selectedConversation.customer_email && <p className="admin-inbox-preview">{selectedConversation.customer_email}</p>}</div>
                     <button className="admin-secondary-button admin-close-chat" type="button" onClick={() => void updateConversationStatus(selectedConversation)}>{selectedConversation.status === 'open' ? 'Close conversation' : 'Reopen conversation'}</button>
                   </div>
                   <div className="admin-chat-messages">
@@ -771,8 +826,8 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               </div>
             </form>
             <div className="admin-panel admin-settings-panel">
-              <div className="admin-panel-heading"><div><p className="admin-kicker">Data and live updates</p><h2>{localMode ? 'SQLite accounts · browser demo data' : 'Supabase live mode'}</h2></div></div>
-              <div className="admin-settings-content"><p>{localMode ? 'Customer registrations and manager sessions are stored in the account service SQLite database. Product edits, fitting requests, and demo support messages are saved in this browser.' : 'Live chat, catalog changes, and appointment updates are synchronized through Supabase Realtime. The self-hosted account database remains available for website customer registrations.'}</p></div>
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Data and live updates</p><h2>{localMode ? 'SQLite accounts and support chat' : 'Supabase live mode'}</h2></div></div>
+              <div className="admin-settings-content"><p>{localMode ? 'Customer registrations, manager sessions, and customer conversations are stored in the account service SQLite database. Product edits, fitting requests, and WhatsApp settings remain saved in this browser.' : 'Live chat, catalog changes, and appointment updates are synchronized through Supabase Realtime. The self-hosted account database remains available for website customer registrations.'}</p></div>
             </div>
           </section>
         )}

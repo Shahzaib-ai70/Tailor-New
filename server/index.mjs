@@ -18,6 +18,11 @@ function hashToken(token) {
   return createHash('sha256').update(token).digest('hex')
 }
 
+function timestampAfter(reference) {
+  const referenceTime = reference ? Date.parse(reference) : 0
+  return new Date(Math.max(Date.now(), Number.isFinite(referenceTime) ? referenceTime + 1 : 0)).toISOString()
+}
+
 function safeUser(row) {
   return { id: row.id, fullName: row.full_name, email: row.email }
 }
@@ -100,13 +105,39 @@ export function createAccountApp({
       expires_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS admin_sessions_expiry ON admin_sessions(expires_at);
+    CREATE TABLE IF NOT EXISTS support_sessions (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS support_sessions_expiry ON support_sessions(expires_at);
+    CREATE TABLE IF NOT EXISTS support_conversations (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_email TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+      admin_read_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS support_conversations_customer ON support_conversations(customer_id, status, updated_at);
+    CREATE TABLE IF NOT EXISTS support_messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL REFERENCES support_conversations(id) ON DELETE CASCADE,
+      sender_id TEXT NOT NULL,
+      sender_role TEXT NOT NULL CHECK (sender_role IN ('customer', 'admin')),
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS support_messages_conversation ON support_messages(conversation_id, created_at);
   `)
 
   const app = express()
   app.disable('x-powered-by')
   app.set('trust proxy', 1)
   app.use(express.json({ limit: '10kb', strict: true }))
-  app.use(['/api/account', '/api/admin'], (_request, response, next) => {
+  app.use(['/api/account', '/api/admin', '/api/support'], (_request, response, next) => {
     response.setHeader('Cache-Control', 'no-store')
     next()
   })
@@ -143,6 +174,10 @@ export function createAccountApp({
     SELECT token_hash FROM admin_sessions
     WHERE token_hash = ? AND expires_at > ?
   `)
+  const findSupportSession = database.prepare(`
+    SELECT id FROM support_sessions
+    WHERE token_hash = ? AND expires_at > ?
+  `)
 
   function createSession(account, response) {
     const token = randomBytes(32).toString('base64url')
@@ -159,12 +194,239 @@ export function createAccountApp({
     return session ? { username: normalizeUsername(adminUsername) } : null
   }
 
+  function getSupportOwner(request, response) {
+    const accountToken = cookieValue(request, 'mian_session')
+    const account = accountToken ? findSessionAccount.get(hashToken(accountToken), Date.now()) : null
+    if (account) {
+      return {
+        id: `account-${account.id}`,
+        name: account.full_name,
+        email: account.email,
+      }
+    }
+
+    const supportToken = cookieValue(request, 'mian_support_session')
+    const supportSession = supportToken ? findSupportSession.get(hashToken(supportToken), Date.now()) : null
+    if (supportSession) return { id: `guest-${supportSession.id}`, name: 'Store visitor', email: null }
+
+    const token = randomBytes(32).toString('base64url')
+    const id = randomBytes(16).toString('hex')
+    database.prepare('INSERT INTO support_sessions (id, token_hash, expires_at) VALUES (?, ?, ?)')
+      .run(id, hashToken(token), Date.now() + sessionDurationSeconds * 1000)
+    setSessionCookie(response, token, 'mian_support_session')
+    return { id: `guest-${id}`, name: 'Store visitor', email: null }
+  }
+
+  function findOpenConversation(ownerId) {
+    return database.prepare(`
+      SELECT * FROM support_conversations
+      WHERE customer_id = ? AND status = 'open'
+      ORDER BY updated_at DESC LIMIT 1
+    `).get(ownerId)
+  }
+
+  function findLatestConversation(ownerId) {
+    return database.prepare(`
+      SELECT * FROM support_conversations
+      WHERE customer_id = ?
+      ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, updated_at DESC
+      LIMIT 1
+    `).get(ownerId)
+  }
+
+  function createSupportConversation(owner) {
+    const now = new Date().toISOString()
+    const conversation = {
+      id: randomBytes(16).toString('hex'),
+      customer_id: owner.id,
+      customer_name: owner.name,
+      customer_email: owner.email,
+      status: 'open',
+      admin_read_at: null,
+      created_at: now,
+      updated_at: now,
+    }
+    database.prepare(`
+      INSERT INTO support_conversations
+        (id, customer_id, customer_name, customer_email, status, admin_read_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      conversation.id,
+      conversation.customer_id,
+      conversation.customer_name,
+      conversation.customer_email,
+      conversation.status,
+      conversation.admin_read_at,
+      conversation.created_at,
+      conversation.updated_at,
+    )
+    return conversation
+  }
+
+  function listSupportMessages(conversationId) {
+    return database.prepare(`
+      SELECT * FROM support_messages
+      WHERE conversation_id = ?
+      ORDER BY created_at, rowid
+    `).all(conversationId)
+  }
+
+  function latestCustomerMessageTime(conversationId) {
+    return database.prepare(`
+      SELECT created_at FROM support_messages
+      WHERE conversation_id = ? AND sender_role = 'customer'
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(conversationId)?.created_at
+  }
+
   app.get('/api/account', (request, response) => {
     database.prepare('DELETE FROM customer_sessions WHERE expires_at <= ?').run(Date.now())
     const token = cookieValue(request, 'mian_session')
     const account = token ? findSessionAccount.get(hashToken(token), Date.now()) : null
     if (!account && token) clearSessionCookie(response)
     response.json({ user: account ? safeUser(account) : null })
+  })
+
+  app.get('/api/support', (request, response) => {
+    database.prepare('DELETE FROM support_sessions WHERE expires_at <= ?').run(Date.now())
+    const owner = getSupportOwner(request, response)
+    const conversation = findLatestConversation(owner.id) ?? createSupportConversation(owner)
+    response.json({ conversation, messages: listSupportMessages(conversation.id) })
+  })
+
+  app.post('/api/support/name', allowSameOrigin, (request, response) => {
+    const owner = getSupportOwner(request, response)
+    const name = typeof request.body?.name === 'string' ? request.body.name.trim() : ''
+    if (name.length < 1 || name.length > 80) {
+      response.status(400).json({ error: 'Enter a name between 1 and 80 characters.' })
+      return
+    }
+    const conversation = findOpenConversation(owner.id)
+    if (!conversation) {
+      response.status(404).json({ error: 'No open conversation was found.' })
+      return
+    }
+    const updatedAt = new Date().toISOString()
+    database.prepare('UPDATE support_conversations SET customer_name = ?, updated_at = ? WHERE id = ?')
+      .run(name, updatedAt, conversation.id)
+    response.json({
+      conversation: { ...conversation, customer_name: name, updated_at: updatedAt },
+    })
+  })
+
+  app.post('/api/support/messages', allowSameOrigin, rateLimit, (request, response) => {
+    const owner = getSupportOwner(request, response)
+    const body = typeof request.body?.body === 'string' ? request.body.body.trim() : ''
+    if (!body || body.length > 2000) {
+      response.status(400).json({ error: 'Messages must contain between 1 and 2000 characters.' })
+      return
+    }
+    const conversation = findOpenConversation(owner.id)
+    if (!conversation) {
+      response.status(404).json({ error: 'No open conversation was found.' })
+      return
+    }
+    const createdAt = timestampAfter(conversation.admin_read_at)
+    const message = {
+      id: randomBytes(16).toString('hex'),
+      conversation_id: conversation.id,
+      sender_id: owner.id,
+      sender_role: 'customer',
+      body,
+      created_at: createdAt,
+    }
+    database.prepare(`
+      INSERT INTO support_messages (id, conversation_id, sender_id, sender_role, body, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(message.id, message.conversation_id, message.sender_id, message.sender_role, message.body, message.created_at)
+    database.prepare('UPDATE support_conversations SET updated_at = ? WHERE id = ?')
+      .run(createdAt, conversation.id)
+    response.status(201).json({ message })
+  })
+
+  app.use('/api/admin/support', (request, response, next) => {
+    if (!getAdminSession(request, response)) {
+      response.status(401).json({ error: 'Manager sign-in is required to view support conversations.' })
+      return
+    }
+    next()
+  })
+
+  app.get('/api/admin/support', (_request, response) => {
+    const conversations = database.prepare(`
+      SELECT * FROM support_conversations
+      ORDER BY updated_at DESC, created_at DESC
+    `).all()
+    const messages = database.prepare(`
+      SELECT support_messages.* FROM support_messages
+      JOIN support_conversations ON support_conversations.id = support_messages.conversation_id
+      ORDER BY support_messages.created_at, support_messages.rowid
+    `).all()
+    response.json({ conversations, messages })
+  })
+
+  app.post('/api/admin/support/:id/read', allowSameOrigin, (request, response) => {
+    const conversation = database.prepare('SELECT * FROM support_conversations WHERE id = ?').get(request.params.id)
+    if (!conversation) {
+      response.status(404).json({ error: 'Conversation not found.' })
+      return
+    }
+    const adminReadAt = timestampAfter(latestCustomerMessageTime(conversation.id))
+    database.prepare('UPDATE support_conversations SET admin_read_at = ? WHERE id = ?')
+      .run(adminReadAt, conversation.id)
+    response.json({ conversation: { ...conversation, admin_read_at: adminReadAt } })
+  })
+
+  app.patch('/api/admin/support/:id', allowSameOrigin, (request, response) => {
+    const status = request.body?.status
+    if (status !== 'open' && status !== 'closed') {
+      response.status(400).json({ error: 'Conversation status must be open or closed.' })
+      return
+    }
+    const conversation = database.prepare('SELECT * FROM support_conversations WHERE id = ?').get(request.params.id)
+    if (!conversation) {
+      response.status(404).json({ error: 'Conversation not found.' })
+      return
+    }
+    const updatedAt = new Date().toISOString()
+    database.prepare('UPDATE support_conversations SET status = ?, updated_at = ? WHERE id = ?')
+      .run(status, updatedAt, conversation.id)
+    response.json({ conversation: { ...conversation, status, updated_at: updatedAt } })
+  })
+
+  app.post('/api/admin/support/:id/messages', allowSameOrigin, (request, response) => {
+    const conversation = database.prepare('SELECT * FROM support_conversations WHERE id = ?').get(request.params.id)
+    if (!conversation) {
+      response.status(404).json({ error: 'Conversation not found.' })
+      return
+    }
+    if (conversation.status !== 'open') {
+      response.status(409).json({ error: 'Reopen this conversation before replying.' })
+      return
+    }
+    const body = typeof request.body?.body === 'string' ? request.body.body.trim() : ''
+    if (!body || body.length > 2000) {
+      response.status(400).json({ error: 'Messages must contain between 1 and 2000 characters.' })
+      return
+    }
+    const admin = getAdminSession(request, response)
+    const createdAt = timestampAfter(latestCustomerMessageTime(conversation.id))
+    const message = {
+      id: randomBytes(16).toString('hex'),
+      conversation_id: conversation.id,
+      sender_id: admin.username,
+      sender_role: 'admin',
+      body,
+      created_at: createdAt,
+    }
+    database.prepare(`
+      INSERT INTO support_messages (id, conversation_id, sender_id, sender_role, body, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(message.id, message.conversation_id, message.sender_id, message.sender_role, message.body, message.created_at)
+    database.prepare('UPDATE support_conversations SET updated_at = ?, admin_read_at = ? WHERE id = ?')
+      .run(createdAt, createdAt, conversation.id)
+    response.status(201).json({ message, conversation: { ...conversation, updated_at: createdAt, admin_read_at: createdAt } })
   })
 
   app.get('/api/admin/session', (request, response) => {

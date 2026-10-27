@@ -109,6 +109,83 @@ test('manager sign-in protects the SQL customer directory and persists the sessi
   assert.equal(afterLogout.status, 401)
 })
 
+test('support conversations are isolated by customer account and manager reads clear unread state', async () => {
+  const secondRegistration = await fetch(`${origin}/api/account/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ fullName: 'Second Customer', email: 'second@example.com', password: 'a-secure-password' }),
+  })
+  assert.equal(secondRegistration.status, 201)
+  const firstAccountCookie = (await fetch(`${origin}/api/account/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ email: 'test@example.com', password: 'a-secure-password' }),
+  })).headers.get('set-cookie').split(';')[0]
+  const secondAccountCookie = secondRegistration.headers.get('set-cookie').split(';')[0]
+
+  const firstChatResponse = await fetch(`${origin}/api/support`, { headers: { Cookie: firstAccountCookie } })
+  const firstChat = await firstChatResponse.json()
+  assert.equal(firstChat.conversation.customer_email, 'test@example.com')
+  assert.match(firstChat.conversation.customer_id, /^account-/)
+
+  const secondChatResponse = await fetch(`${origin}/api/support`, { headers: { Cookie: secondAccountCookie } })
+  const secondChat = await secondChatResponse.json()
+  assert.notEqual(firstChat.conversation.id, secondChat.conversation.id)
+  assert.equal(secondChat.messages.length, 0)
+
+  const firstMessageResponse = await fetch(`${origin}/api/support/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: firstAccountCookie },
+    body: JSON.stringify({ body: 'Private question for my order' }),
+  })
+  assert.equal(firstMessageResponse.status, 201)
+  const firstMessage = (await firstMessageResponse.json()).message
+  const secondRefresh = await fetch(`${origin}/api/support`, { headers: { Cookie: secondAccountCookie } })
+  assert.equal((await secondRefresh.json()).messages.length, 0)
+
+  const unauthorizedInbox = await fetch(`${origin}/api/admin/support`)
+  assert.equal(unauthorizedInbox.status, 401)
+  const login = await fetch(`${origin}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ username: 'ShahzaibKS', password: 'a-manager-password' }),
+  })
+  const adminCookie = login.headers.get('set-cookie').split(';')[0]
+  const inboxResponse = await fetch(`${origin}/api/admin/support`, { headers: { Cookie: adminCookie } })
+  assert.equal(inboxResponse.status, 200)
+  const inbox = await inboxResponse.json()
+  assert.ok(inbox.conversations.some((item) => item.id === firstChat.conversation.id))
+  assert.ok(inbox.conversations.some((item) => item.id === secondChat.conversation.id))
+  assert.ok(inbox.messages.some((item) => item.id === firstMessage.id))
+
+  const readResponse = await fetch(`${origin}/api/admin/support/${firstChat.conversation.id}/read`, {
+    method: 'POST',
+    headers: { Origin: origin, Cookie: adminCookie },
+  })
+  assert.equal(readResponse.status, 200)
+  const readConversation = (await readResponse.json()).conversation
+  assert.ok(readConversation.admin_read_at >= firstMessage.created_at)
+
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  const nextCustomerMessageResponse = await fetch(`${origin}/api/support/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: firstAccountCookie },
+    body: JSON.stringify({ body: 'One more detail' }),
+  })
+  const nextCustomerMessage = (await nextCustomerMessageResponse.json()).message
+  assert.ok(nextCustomerMessage.created_at > readConversation.admin_read_at)
+
+  const replyResponse = await fetch(`${origin}/api/admin/support/${firstChat.conversation.id}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ body: 'We can help with that.' }),
+  })
+  assert.equal(replyResponse.status, 201)
+  const refreshedCustomerChat = await fetch(`${origin}/api/support`, { headers: { Cookie: firstAccountCookie } })
+  const refreshedChat = await refreshedCustomerChat.json()
+  assert.deepEqual(refreshedChat.messages.map(({ sender_role }) => sender_role), ['customer', 'customer', 'admin'])
+})
+
 test('manager login reports missing SQL admin credentials as a setup error', async () => {
   const missingConfigDirectory = mkdtempSync(join(tmpdir(), 'mian-admin-config-test-'))
   const unconfigured = createAccountApp({

@@ -29,7 +29,9 @@ export type SupportConversation = {
   id: string
   customer_id: string
   customer_name: string
+  customer_email?: string | null
   status: 'open' | 'closed'
+  admin_read_at?: string | null
   created_at: string
   updated_at: string
 }
