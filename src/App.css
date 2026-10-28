@@ -10,6 +10,9 @@
 .main-nav a { color: #555149; font-size: 12px; text-decoration: none; transition: color .2s; }
 .main-nav a:hover, .main-nav a.active { color: var(--moss); }
 .header-actions { justify-self: end; display: flex; align-items: center; gap: clamp(12px, 2vw, 24px); }
+.language-switcher { display: inline-flex; align-items: center; }
+.language-switcher select { min-height: 34px; padding: 4px 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+.language-switcher select:focus-visible { outline: 2px solid var(--moss); outline-offset: 2px; }
 .account-link, .bag-button { display: inline-flex; align-items: center; gap: 8px; padding: 9px 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 12px; text-decoration: none; cursor: pointer; }
 .account-link:hover { color: var(--moss); }
 .bag-button { gap: 9px; padding-left: 4px; }
@@ -208,7 +211,8 @@
   .main-nav.is-open { display: flex; }
   .main-nav a { padding: 14px 0; border-bottom: 1px solid var(--line); }
   .main-nav a:last-child { border-bottom: 0; }
-  .header-actions { gap: 13px; }
+  .header-actions { gap: 8px; }
+  .language-switcher select { max-width: 68px; min-height: 32px; padding: 3px 4px; font-size: 9px; }
   .account-link, .bag-button { gap: 5px; font-size: 10px; }
   .account-link span { display: none; }
   .bag-button { gap: 5px; }

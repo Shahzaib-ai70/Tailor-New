@@ -8,6 +8,8 @@ import { readApiResponse } from './lib/api-response'
 import AdminPage from './AdminPage'
 import AccountPage from './AccountPage'
 import SupportWidget from './SupportWidget'
+import LanguageSwitcher from './LanguageSwitcher'
+import { useLocale } from './locale-context'
 import './App.css'
 
 type CartLine = { product: Product; colorway: Colorway; size: string; quantity: number }
@@ -114,6 +116,7 @@ const sizes = ['S', 'M', 'L', 'XL', 'XXL']
 const money = new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', maximumFractionDigits: 0 })
 
 function ProductCard({ product, onAdd }: { product: Product; onAdd: (product: Product, colorway: Colorway, size: string) => void }) {
+  const { t } = useLocale()
   const [size, setSize] = useState('M')
   const [selectedColorway, setSelectedColorway] = useState(product.colorways[0])
   const [added, setAdded] = useState(false)
@@ -125,49 +128,52 @@ function ProductCard({ product, onAdd }: { product: Product; onAdd: (product: Pr
 
   return (
     <article className="product-card">
-      <Link className="product-image-wrap" to={`/shop/${product.id}`} aria-label={`View ${product.name}`}>
-        <img className="product-image" src={product.image} alt={`Men's fashion reference photo for ${product.name}`} />
-        {product.tag && <span className="product-tag">{product.tag}</span>}
-        <span className="product-view">View design <ArrowUpRight size={14} /></span>
+      <Link className="product-image-wrap" to={`/shop/${product.id}`} aria-label={`${t('View')} ${product.name}`}>
+        <img className="product-image" src={product.image} alt={`${t("Men's fashion reference photo for")} ${t(product.name)}`} />
+        {product.tag && <span className="product-tag">{t(product.tag)}</span>}
+        <span className="product-view">{t('View design')} <ArrowUpRight size={14} /></span>
       </Link>
       <div className="product-info">
-        <div className="product-title-row"><div><h3><Link to={`/shop/${product.id}`}>{product.name}</Link></h3><p>{product.detail}</p></div><span className="product-price">{money.format(product.price)}</span></div>
-        <div className="card-color-picker" role="group" aria-label={`Choose color for ${product.name}`}><span className="color-picker-label">{selectedColorway.name}</span><div className="color-options">{product.colorways.map((colorway) => <button className={selectedColorway.name === colorway.name ? 'color-option selected' : 'color-option'} key={colorway.name} type="button" onClick={() => setSelectedColorway(colorway)} aria-label={`${colorway.name} color`} aria-pressed={selectedColorway.name === colorway.name} title={colorway.name} style={{ '--swatch': colorway.hex } as React.CSSProperties} />)}</div></div>
-        <div className="product-actions"><label className="size-select-label" htmlFor={`size-${product.id}`}>Size</label><select id={`size-${product.id}`} value={size} onChange={(event) => setSize(event.target.value)} aria-label={`Select size for ${product.name}`}>{sizes.map((value) => <option key={value}>{value}</option>)}</select><button className="add-button" type="button" onClick={add}>{added ? <><Check size={15} /> Added</> : <>Add to bag <Plus size={15} /></>}</button></div>
+        <div className="product-title-row"><div><h3><Link to={`/shop/${product.id}`}>{t(product.name)}</Link></h3><p>{t(product.detail)}</p></div><span className="product-price">{money.format(product.price)}</span></div>
+        <div className="card-color-picker" role="group" aria-label={`${t('Choose color for')} ${product.name}`}><span className="color-picker-label">{t(selectedColorway.name)}</span><div className="color-options">{product.colorways.map((colorway) => <button className={selectedColorway.name === colorway.name ? 'color-option selected' : 'color-option'} key={colorway.name} type="button" onClick={() => setSelectedColorway(colorway)} aria-label={`${t(colorway.name)} ${t('color')}`} aria-pressed={selectedColorway.name === colorway.name} title={t(colorway.name)} style={{ '--swatch': colorway.hex } as React.CSSProperties} />)}</div></div>
+        <div className="product-actions"><label className="size-select-label" htmlFor={`size-${product.id}`}>{t('Size')}</label><select id={`size-${product.id}`} value={size} onChange={(event) => setSize(event.target.value)} aria-label={`${t('Select size for')} ${product.name}`}>{sizes.map((value) => <option key={value}>{value}</option>)}</select><button className="add-button" type="button" onClick={add}>{added ? <><Check size={15} /> {t('Added')}</> : <>{t('Add to bag')} <Plus size={15} /></>}</button></div>
       </div>
     </article>
   )
 }
 
 function HomePage({ catalog, onAdd }: { catalog: Product[]; onAdd: (product: Product, colorway: Colorway, size: string) => void }) {
+  const { t } = useLocale()
   const featuredProducts = catalog.length > 2 ? [catalog[0], catalog[Math.floor(catalog.length / 2)], catalog[catalog.length - 1]] : catalog
   return (
     <>
       <section className="hero" aria-labelledby="hero-title">
-        <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" /> Made with our roots in mind</p><h1 id="hero-title">Tradition,<br /><em>stitched your way.</em></h1><p className="hero-description">Pakistani shalwar kameez, cut for today. Thoughtful fabrics, distinctive stitching, and room to move through every moment.</p><Link className="button button-dark" to="/shop">Explore the collection <ArrowUpRight size={16} /></Link><div className="hero-footnote"><span>PAKISTANI CRAFT</span><span>Designed with care <i /> Made to wear</span></div></div>
-        <div className="hero-image" role="img" aria-label="Man wearing a charcoal Pakistani shalwar kameez"><div className="image-note"><span>THE EVERYDAY EDIT</span><span>01 / 50 DESIGNS</span></div><div className="hero-caption"><span>Easy in every detail.</span><ArrowDown size={17} /></div></div>
-        <div className="hero-side-label">SHALWAR KAMEEZ · MADE WITH INTENTION</div>
+        <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" /> {t('Made with our roots in mind')}</p><h1 id="hero-title">{t('Tradition,')}<br /><em>{t('stitched your way.')}</em></h1><p className="hero-description">{t('Pakistani shalwar kameez, cut for today. Thoughtful fabrics, distinctive stitching, and room to move through every moment.')}</p><Link className="button button-dark" to="/shop">{t('Explore the collection')} <ArrowUpRight size={16} /></Link><div className="hero-footnote"><span>{t('PAKISTANI CRAFT')}</span><span>{t('Designed with care')} <i /> {t('Made to wear')}</span></div></div>
+        <div className="hero-image" role="img" aria-label={t('Man wearing a charcoal Pakistani shalwar kameez')}><div className="image-note"><span>{t('THE EVERYDAY EDIT')}</span><span>01 / 50 {t('DESIGNS')}</span></div><div className="hero-caption"><span>{t('Easy in every detail.')}</span><ArrowDown size={17} /></div></div>
+        <div className="hero-side-label">{t('SHALWAR KAMEEZ · MADE WITH INTENTION')}</div>
       </section>
-      <section className="trust-strip" aria-label="Our promise"><span>Pakistani design sensibility</span><i /><span>Comfort-first cottons</span><i /><span>Careful finishing</span><i /><span>Made for your moments</span></section>
-      <section className="featured section-wrap"><div className="section-heading"><div><p className="eyebrow">A few good places to start</p><h2>Stitched for<br /><em>your kind of day.</em></h2></div><p className="section-intro">From the ease of everyday cotton to a little extra detail for the celebrations that stay with you.</p></div><div className="product-grid">{featuredProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd} />)}</div><Link className="text-link all-suits-link" to="/shop">Explore 50 stitched designs in five colors <ArrowRight size={15} /></Link></section>
-      <section className="home-craft"><div className="home-craft-photo" role="img" aria-label="Pakistani man wearing traditional charcoal shalwar kameez" /><div className="home-craft-copy"><p className="eyebrow">The hand behind the stitch</p><h2>Everyday ease.<br /><em>Considered detail.</em></h2><p>We believe a good kameez is felt before it is noticed: in its drape, the ease of its cut, and the care in every finish.</p><Link className="text-link" to="/craft">Meet the craft <ArrowRight size={15} /></Link></div></section>
+      <section className="trust-strip" aria-label={t('Our promise')}><span>{t('Pakistani design sensibility')}</span><i /><span>{t('Comfort-first cottons')}</span><i /><span>{t('Careful finishing')}</span><i /><span>{t('Made for your moments')}</span></section>
+      <section className="featured section-wrap"><div className="section-heading"><div><p className="eyebrow">{t('A few good places to start')}</p><h2>{t('Stitched for')}<br /><em>{t('your kind of day.')}</em></h2></div><p className="section-intro">{t('From the ease of everyday cotton to a little extra detail for the celebrations that stay with you.')}</p></div><div className="product-grid">{featuredProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd} />)}</div><Link className="text-link all-suits-link" to="/shop">{t('Explore 50 stitched designs in five colors')} <ArrowRight size={15} /></Link></section>
+      <section className="home-craft"><div className="home-craft-photo" role="img" aria-label={t('Pakistani man wearing traditional charcoal shalwar kameez')} /><div className="home-craft-copy"><p className="eyebrow">{t('The hand behind the stitch')}</p><h2>{t('Everyday ease.')}<br /><em>{t('Considered detail.')}</em></h2><p>{t('We believe a good kameez is felt before it is noticed: in its drape, the ease of its cut, and the care in every finish.')}</p><Link className="text-link" to="/craft">{t('Meet the craft')} <ArrowRight size={15} /></Link></div></section>
     </>
   )
 }
 
 function ShopPage({ catalog, onAdd }: { catalog: Product[]; onAdd: (product: Product, colorway: Colorway, size: string) => void }) {
+  const { t } = useLocale()
   const [activeCategory, setActiveCategory] = useState('All collections')
   const visibleProducts = activeCategory === 'All collections' ? catalog : catalog.filter((product) => product.category === activeCategory)
   return (
     <section className="shop-page section-wrap">
-      <div className="page-intro"><p className="eyebrow">The shalwar kameez collection</p><h1>Made for the<br /><em>way you move.</em></h1><p>Explore fifty designs across five stitch treatments and five colorways. Stock photos are style references and may not show the exact design or selected color.</p></div>
-      <div className="collection-tools"><div className="filter-list" role="group" aria-label="Filter designs by occasion">{categories.map((category) => <button className={activeCategory === category ? 'filter-button active' : 'filter-button'} key={category} onClick={() => setActiveCategory(category)} type="button">{category}</button>)}</div><span className="product-count">{visibleProducts.length} designs</span></div>
+      <div className="page-intro"><p className="eyebrow">{t('The shalwar kameez collection')}</p><h1>{t('Made for the')}<br /><em>{t('way you move.')}</em></h1><p>{t('Explore fifty designs across five stitch treatments and five colorways. Stock photos are style references and may not show the exact design or selected color.')}</p></div>
+      <div className="collection-tools"><div className="filter-list" role="group" aria-label={t('Filter designs by occasion')}>{categories.map((category) => <button className={activeCategory === category ? 'filter-button active' : 'filter-button'} key={category} onClick={() => setActiveCategory(category)} type="button">{t(category)}</button>)}</div><span className="product-count">{visibleProducts.length} {t('designs')}</span></div>
       <div className="product-grid shop-grid">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd} />)}</div>
     </section>
   )
 }
 
 function ProductPage({ catalog, onAdd }: { catalog: Product[]; onAdd: (product: Product, colorway: Colorway, size: string) => void }) {
+  const { t } = useLocale()
   const { productId } = useParams()
   const product = catalog.find((item) => item.id === productId)
   const [size, setSize] = useState('M')
@@ -176,23 +182,25 @@ function ProductPage({ catalog, onAdd }: { catalog: Product[]; onAdd: (product: 
   if (!product) return <Navigate to="/shop" replace />
   return (
     <section className="product-page section-wrap">
-      <div className="breadcrumbs"><Link to="/shop">Shop</Link><span>/</span><span>{product.name}</span></div>
-      <div className="product-detail-grid"><div className="product-detail-photo"><img src={product.image} alt={`Men's fashion reference photo for ${product.name}`} /></div><div className="product-detail-copy"><p className="eyebrow">{product.category} collection</p><h1>{product.name}</h1><p className="detail-subtitle">{product.detail}</p><p className="detail-price">{money.format(product.price)}</p><p className="detail-description">A thoughtfully stitched Pakistani shalwar kameez made for comfort and movement. Stock photos are style references; the exact product color and stitching may differ. Choose {selectedColorway.name.toLowerCase()} or another colorway to make it yours.</p><div className="detail-color-picker"><span className="detail-size-label">Color: <strong>{selectedColorway.name}</strong></span><div className="color-options">{product.colorways.map((colorway) => <button className={selectedColorway.name === colorway.name ? 'color-option selected' : 'color-option'} key={colorway.name} type="button" onClick={() => setSelectedColorway(colorway)} aria-label={`${colorway.name} color`} aria-pressed={selectedColorway.name === colorway.name} title={colorway.name} style={{ '--swatch': colorway.hex } as React.CSSProperties} />)}</div></div><div className="detail-specs"><div><span>Fabric</span><strong>{product.fabric}</strong></div><div><span>Stitching</span><strong>{product.stitching}</strong></div><div><span>Fit</span><strong>Relaxed kameez, easy shalwar</strong></div></div><label className="detail-size-label" htmlFor="product-size">Select size</label><div className="detail-purchase"><select id="product-size" value={size} onChange={(event) => setSize(event.target.value)}>{sizes.map((value) => <option key={value}>{value}</option>)}</select><button className="button button-dark" type="button" onClick={() => { onAdd(product, selectedColorway, size); setAdded(true); window.setTimeout(() => setAdded(false), 1500) }}>{added ? <><Check size={16} /> Added to bag</> : <>Add to bag <Plus size={16} /></>}</button></div><p className="made-note">Need a more personal fit? <Link to="/fitting">Book a fitting <ArrowRight size={13} /></Link></p></div></div>
+      <div className="breadcrumbs"><Link to="/shop">{t('Shop')}</Link><span>/</span><span>{product.name}</span></div>
+      <div className="product-detail-grid"><div className="product-detail-photo"><img src={product.image} alt={`${t("Men's fashion reference photo for")} ${t(product.name)}`} /></div><div className="product-detail-copy"><p className="eyebrow">{t(product.category)} {t('collection')}</p><h1>{t(product.name)}</h1><p className="detail-subtitle">{t(product.detail)}</p><p className="detail-price">{money.format(product.price)}</p><p className="detail-description">{t('A thoughtfully stitched Pakistani shalwar kameez made for comfort and movement. Stock photos are style references; the exact product color and stitching may differ. Choose ')}{t(selectedColorway.name)}{t(' or another colorway to make it yours.')}</p><div className="detail-color-picker"><span className="detail-size-label">{t('Color:')} <strong>{t(selectedColorway.name)}</strong></span><div className="color-options">{product.colorways.map((colorway) => <button className={selectedColorway.name === colorway.name ? 'color-option selected' : 'color-option'} key={colorway.name} type="button" onClick={() => setSelectedColorway(colorway)} aria-label={`${t(colorway.name)} ${t('color')}`} aria-pressed={selectedColorway.name === colorway.name} title={t(colorway.name)} style={{ '--swatch': colorway.hex } as React.CSSProperties} />)}</div></div><div className="detail-specs"><div><span>{t('Fabric')}</span><strong>{t(product.fabric)}</strong></div><div><span>{t('Stitching')}</span><strong>{t(product.stitching)}</strong></div><div><span>{t('Fit')}</span><strong>{t('Relaxed kameez, easy shalwar')}</strong></div></div><label className="detail-size-label" htmlFor="product-size">{t('Select size')}</label><div className="detail-purchase"><select id="product-size" value={size} onChange={(event) => setSize(event.target.value)}>{sizes.map((value) => <option key={value}>{value}</option>)}</select><button className="button button-dark" type="button" onClick={() => { onAdd(product, selectedColorway, size); setAdded(true); window.setTimeout(() => setAdded(false), 1500) }}>{added ? <><Check size={16} /> {t('Added to bag')}</> : <>{t('Add to bag')} <Plus size={16} /></>}</button></div><p className="made-note">{t('Need a more personal fit?')} <Link to="/fitting">{t('Book a fitting')} <ArrowRight size={13} /></Link></p></div></div>
     </section>
   )
 }
 
 function CraftPage() {
+  const { t } = useLocale()
   return (
     <section className="story-page">
-      <div className="story-hero"><div className="story-hero-copy"><p className="eyebrow">Our approach</p><h1>Rooted in tradition.<br /><em>Made for now.</em></h1><p>Clothes that carry a little of home, wherever the day takes you.</p></div><div className="story-hero-image" role="img" aria-label="A man in black Pakistani shalwar kameez outdoors" /></div>
-      <div className="craft-story section-wrap"><div><p className="eyebrow">The details matter</p><h2>Good fabric.<br /><em>Thoughtful stitching.</em></h2></div><div><p>Shalwar kameez is a living wardrobe: generous in movement, versatile in how it is worn, and rich with regional character. We take that familiar form seriously.</p><p>Each design begins with the way it should feel. Then we choose breathable cloth, shape a comfortable silhouette, and finish the collar, placket, and cuffs with intention.</p><Link className="text-link" to="/shop">Browse stitched designs <ArrowRight size={15} /></Link></div></div>
-      <div className="craft-values"><article><span>01</span><h3>Comfort first</h3><p>Room to move, breathable fabrics, and cuts that work with your day.</p></article><article><span>02</span><h3>Stitch with purpose</h3><p>Clean plackets, considered collars, and small details that feel personal.</p></article><article><span>03</span><h3>Wear it often</h3><p>Versatile pieces for everyday visits, Friday prayers, Eid, and family gatherings.</p></article></div>
+      <div className="story-hero"><div className="story-hero-copy"><p className="eyebrow">{t('Our approach')}</p><h1>{t('Rooted in tradition.')}<br /><em>{t('Made for now.')}</em></h1><p>{t('Clothes that carry a little of home, wherever the day takes you.')}</p></div><div className="story-hero-image" role="img" aria-label={t('A man in black Pakistani shalwar kameez outdoors')} /></div>
+      <div className="craft-story section-wrap"><div><p className="eyebrow">{t('The details matter')}</p><h2>{t('Good fabric.')}<br /><em>{t('Thoughtful stitching.')}</em></h2></div><div><p>{t('Shalwar kameez is a living wardrobe: generous in movement, versatile in how it is worn, and rich with regional character. We take that familiar form seriously.')}</p><p>{t('Each design begins with the way it should feel. Then we choose breathable cloth, shape a comfortable silhouette, and finish the collar, placket, and cuffs with intention.')}</p><Link className="text-link" to="/shop">{t('Browse stitched designs')} <ArrowRight size={15} /></Link></div></div>
+      <div className="craft-values"><article><span>01</span><h3>{t('Comfort first')}</h3><p>{t('Room to move, breathable fabrics, and cuts that work with your day.')}</p></article><article><span>02</span><h3>{t('Stitch with purpose')}</h3><p>{t('Clean plackets, considered collars, and small details that feel personal.')}</p></article><article><span>03</span><h3>{t('Wear it often')}</h3><p>{t('Versatile pieces for everyday visits, Friday prayers, Eid, and family gatherings.')}</p></article></div>
     </section>
   )
 }
 
 function FittingPage() {
+  const { t } = useLocale()
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -244,38 +252,40 @@ function FittingPage() {
   return (
     <section className="fitting-page section-wrap">
       <div className="fitting-intro">
-        <p className="eyebrow">A fit that feels like yours</p>
-        <h1>Let's get the<br /><em>details right.</em></h1>
-        <p>Tell us a little about what you need. We'll be in touch to arrange a fitting and talk through fabric, cut, and finishing.</p>
-        <div className="fitting-note"><span>01</span><p>Personal measurements</p><span>02</span><p>Fabric and stitch choices</p><span>03</span><p>A kameez made for you</p></div>
+        <p className="eyebrow">{t('A fit that feels like yours')}</p>
+        <h1>{t("Let's get the")}<br /><em>{t('details right.')}</em></h1>
+        <p>{t("Tell us a little about what you need. We'll be in touch to arrange a fitting and talk through fabric, cut, and finishing.")}</p>
+        <div className="fitting-note"><span>01</span><p>{t('Personal measurements')}</p><span>02</span><p>{t('Fabric and stitch choices')}</p><span>03</span><p>{t('A kameez made for you')}</p></div>
       </div>
       <form className="fitting-form" onSubmit={submitRequest}>
-        <p className="eyebrow">Request an appointment</p>
+        <p className="eyebrow">{t('Request an appointment')}</p>
         <div className="form-row">
-          <label>Your name<input autoComplete="name" name="name" required placeholder="Full name" /></label>
-          <label>Email address<input autoComplete="email" name="email" type="email" required placeholder="you@example.com" /></label>
+          <label>{t('Your name')}<input autoComplete="name" name="name" required placeholder={t('Full name')} /></label>
+          <label>{t('Email address')}<input autoComplete="email" name="email" type="email" required placeholder="you@example.com" /></label>
         </div>
         <div className="form-row">
-          <label>Phone number<input autoComplete="tel" name="phone" type="tel" required placeholder="+92" /></label>
-          <label>Occasion<select name="occasion" defaultValue=""><option value="" disabled>Select one</option><option>Everyday wear</option><option>Wedding</option><option>Eid or celebration</option><option>Other</option></select></label>
+          <label>{t('Phone number')}<input autoComplete="tel" name="phone" type="tel" required placeholder="+92" /></label>
+          <label>{t('Occasion')}<select name="occasion" defaultValue=""><option value="" disabled>{t('Select one')}</option><option>{t('Everyday wear')}</option><option>{t('Wedding')}</option><option>{t('Eid or celebration')}</option><option>{t('Other')}</option></select></label>
         </div>
-        <label>What are you looking for?<textarea name="notes" rows={4} placeholder="Preferred fabric, color, or stitching details" /></label>
+        <label>{t('What are you looking for?')}<textarea name="notes" rows={4} placeholder={t('Preferred fabric, color, or stitching details')} /></label>
         <button className="button button-dark" type="submit" disabled={submitting}>
-          {submitted ? <><Check size={16} /> Request received</> : submitting ? <>Sending request…</> : <>Request a fitting <ArrowRight size={16} /></>}
+          {submitted ? <><Check size={16} /> {t('Request received')}</> : submitting ? <>{t('Sending request…')}</> : <>{t('Request a fitting')} <ArrowRight size={16} /></>}
         </button>
-        {submitted && <p className="form-success" role="status">{supabase ? 'Thank you. Your fitting request has been sent.' : 'Thank you. Your fitting request is noted in this demo.'}</p>}
-        {error && <p className="form-error" role="alert">{error}</p>}
-        <p className="form-disclaimer">{supabase ? 'Your request will be reviewed by our team.' : 'Demo mode: this request is saved only in this browser and is not sent to our team.'}</p>
+        {submitted && <p className="form-success" role="status">{t(supabase ? 'Thank you. Your fitting request has been sent.' : 'Thank you. Your fitting request is noted in this demo.')}</p>}
+        {error && <p className="form-error" role="alert">{t(error)}</p>}
+        <p className="form-disclaimer">{t(supabase ? 'Your request will be reviewed by our team.' : 'Demo mode: this request is saved only in this browser and is not sent to our team.')}</p>
       </form>
     </section>
   )
 }
 
 function NotFoundPage() {
-  return <section className="not-found section-wrap"><p className="eyebrow">Nothing here</p><h1>Let's find your<br /><em>next favorite.</em></h1><Link className="button button-dark" to="/shop">Browse the collection <ArrowRight size={16} /></Link></section>
+  const { t } = useLocale()
+  return <section className="not-found section-wrap"><p className="eyebrow">{t('Nothing here')}</p><h1>{t("Let's find your")}<br /><em>{t('next favorite.')}</em></h1><Link className="button button-dark" to="/shop">{t('Browse the collection')} <ArrowRight size={16} /></Link></section>
 }
 
 function App() {
+  const { t } = useLocale()
   const location = useLocation()
   const [catalog, setCatalog] = useState<Product[]>(products)
   const [catalogLoadError, setCatalogLoadError] = useState('')
@@ -351,10 +361,10 @@ function App() {
 
   return (
     <div className="storefront">
-      <header className="site-header"><Link className="wordmark" to="/" aria-label="Mian Tailor And Design home"><span className="wordmark-mark" aria-hidden="true"><span>M</span><i /></span><span className="wordmark-name">MIAN <i>TAILOR AND DESIGN</i></span></Link><button className="mobile-menu-toggle" type="button" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'} aria-label="Main navigation"><NavLink to="/" end onClick={() => setMenuOpen(false)}>Home</NavLink><NavLink to="/shop" onClick={() => setMenuOpen(false)}>Shop</NavLink><NavLink to="/craft" onClick={() => setMenuOpen(false)}>Our craft</NavLink><NavLink to="/fitting" onClick={() => setMenuOpen(false)}>Book a fitting</NavLink></nav><div className="header-actions"><Link className="account-link" to="/account" aria-label="Sign in or register"><UserRound size={17} strokeWidth={1.6} /><span>Account</span></Link><button className="bag-button" type="button" onClick={() => setCartOpen(true)} aria-label={`Open shopping bag, ${itemCount} items`}><ShoppingBag size={18} strokeWidth={1.6} /><span>Bag</span><span className="bag-count">{itemCount}</span></button></div></header>
-      <main>{catalogLoadError && <p className="catalog-error" role="alert">Could not load the latest collection: {catalogLoadError}</p>}<Routes><Route path="/" element={<HomePage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop" element={<ShopPage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop/:productId" element={<ProductPage catalog={catalog} onAdd={addToCart} />} /><Route path="/craft" element={<CraftPage />} /><Route path="/fitting" element={<FittingPage />} /><Route path="/account" element={<AccountPage />} /><Route path="*" element={<NotFoundPage />} /></Routes></main>
-      <footer className="site-footer"><Link className="footer-brand" to="/">MIAN TAILOR AND DESIGN</Link><span>Pakistani craft. Made to wear.</span><span>© 2026 Mian Tailor And Design</span></footer>
-      {cartOpen && <div className="cart-layer"><button className="cart-backdrop" type="button" onClick={() => setCartOpen(false)} aria-label="Close shopping bag" /><aside className="cart-drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title"><div className="cart-header"><div><p className="eyebrow">Your selection</p><h2 id="cart-title">The bag <span>({itemCount})</span></h2></div><button className="icon-button" type="button" onClick={() => setCartOpen(false)} aria-label="Close bag"><X size={21} /></button></div>{cart.length === 0 ? <div className="empty-cart"><ShoppingBag size={28} strokeWidth={1.3} /><p>Your next favorite is waiting.</p><Link className="text-link" to="/shop" onClick={() => setCartOpen(false)}>Explore the collection <ArrowRight size={15} /></Link></div> : <><div className="cart-items">{cart.map((line) => <div className="cart-line" key={`${line.product.id}-${line.colorway.name}-${line.size}`}><img src={line.product.image} alt="" /><div className="cart-line-info"><h3>{line.product.name}</h3><p>{line.colorway.name} · Size {line.size}</p><div className="quantity-control"><button type="button" onClick={() => updateQuantity(line.product.id, line.colorway.name, line.size, -1)} aria-label={`Remove one ${line.product.name}`}><Minus size={13} /></button><span>{line.quantity}</span><button type="button" onClick={() => updateQuantity(line.product.id, line.colorway.name, line.size, 1)} aria-label={`Add one ${line.product.name}`}><Plus size={13} /></button></div></div><span className="cart-line-price">{money.format(line.product.price * line.quantity)}</span></div>)}</div><div className="cart-summary"><p><span>Subtotal</span><strong>{money.format(subtotal)}</strong></p><span className="shipping-note">Fitting and delivery details confirmed after request.</span><button className="checkout-button" type="button" disabled>Checkout coming soon <ArrowRight size={16} /></button><button className="continue-shopping" type="button" onClick={() => setCartOpen(false)}>Continue shopping</button></div></>}</aside></div>}
+      <header className="site-header"><Link className="wordmark" to="/" aria-label={t('Mian Tailor And Design home')}><span className="wordmark-mark" aria-hidden="true"><span>M</span><i /></span><span className="wordmark-name">MIAN <i>TAILOR AND DESIGN</i></span></Link><button className="mobile-menu-toggle" type="button" onClick={() => setMenuOpen((open) => !open)} aria-label={t(menuOpen ? 'Close navigation' : 'Open navigation')}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'} aria-label={t('Main navigation')}><NavLink to="/" end onClick={() => setMenuOpen(false)}>{t('Home')}</NavLink><NavLink to="/shop" onClick={() => setMenuOpen(false)}>{t('Shop')}</NavLink><NavLink to="/craft" onClick={() => setMenuOpen(false)}>{t('Our craft')}</NavLink><NavLink to="/fitting" onClick={() => setMenuOpen(false)}>{t('Book a fitting')}</NavLink></nav><div className="header-actions"><LanguageSwitcher /><Link className="account-link" to="/account" aria-label={t('Sign in or register')}><UserRound size={17} strokeWidth={1.6} /><span>{t('Account')}</span></Link><button className="bag-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t('Open shopping bag, ')}${itemCount}${t(' items')}`}><ShoppingBag size={18} strokeWidth={1.6} /><span>{t('Bag')}</span><span className="bag-count">{itemCount}</span></button></div></header>
+      <main>{catalogLoadError && <p className="catalog-error" role="alert">{t('Could not load the latest collection: ')}{catalogLoadError}</p>}<Routes><Route path="/" element={<HomePage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop" element={<ShopPage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop/:productId" element={<ProductPage catalog={catalog} onAdd={addToCart} />} /><Route path="/craft" element={<CraftPage />} /><Route path="/fitting" element={<FittingPage />} /><Route path="/account" element={<AccountPage />} /><Route path="*" element={<NotFoundPage />} /></Routes></main>
+      <footer className="site-footer"><Link className="footer-brand" to="/">MIAN TAILOR AND DESIGN</Link><span>{t('Pakistani craft. Made to wear.')}</span><span>© 2026 Mian Tailor And Design</span></footer>
+      {cartOpen && <div className="cart-layer"><button className="cart-backdrop" type="button" onClick={() => setCartOpen(false)} aria-label={t('Close shopping bag')} /><aside className="cart-drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title"><div className="cart-header"><div><p className="eyebrow">{t('Your selection')}</p><h2 id="cart-title">{t('The bag')} <span>({itemCount})</span></h2></div><button className="icon-button" type="button" onClick={() => setCartOpen(false)} aria-label={t('Close bag')}><X size={21} /></button></div>{cart.length === 0 ? <div className="empty-cart"><ShoppingBag size={28} strokeWidth={1.3} /><p>{t('Your next favorite is waiting.')}</p><Link className="text-link" to="/shop" onClick={() => setCartOpen(false)}>{t('Explore the collection')} <ArrowRight size={15} /></Link></div> : <><div className="cart-items">{cart.map((line) => <div className="cart-line" key={`${line.product.id}-${line.colorway.name}-${line.size}`}><img src={line.product.image} alt="" /><div className="cart-line-info"><h3>{t(line.product.name)}</h3><p>{t(line.colorway.name)} · {t('Size ')}{line.size}</p><div className="quantity-control"><button type="button" onClick={() => updateQuantity(line.product.id, line.colorway.name, line.size, -1)} aria-label={`${t('Remove one ')}${t(line.product.name)}`}><Minus size={13} /></button><span>{line.quantity}</span><button type="button" onClick={() => updateQuantity(line.product.id, line.colorway.name, line.size, 1)} aria-label={`${t('Add one ')}${t(line.product.name)}`}><Plus size={13} /></button></div></div><span className="cart-line-price">{money.format(line.product.price * line.quantity)}</span></div>)}</div><div className="cart-summary"><p><span>{t('Subtotal')}</span><strong>{money.format(subtotal)}</strong></p><span className="shipping-note">{t('Fitting and delivery details confirmed after request.')}</span><button className="checkout-button" type="button" disabled>{t('Checkout coming soon')} <ArrowRight size={16} /></button><button className="continue-shopping" type="button" onClick={() => setCartOpen(false)}>{t('Continue shopping')}</button></div></>}</aside></div>}
       <SupportWidget />
     </div>
   )

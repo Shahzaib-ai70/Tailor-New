@@ -7,6 +7,8 @@ import type { CustomerProfile, FittingRequest, Product, SupportConversation, Sup
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { readApiResponse } from './lib/api-response'
 import { getLocalAdminSnapshot, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
+import { LocalizedContent } from './locale'
+import LanguageSwitcher from './LanguageSwitcher'
 import './Admin.css'
 
 type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'support' | 'settings'
@@ -706,14 +708,15 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   }, [localAdminUser, localMode, section, selectedConversation, supportMessages])
 
   if (!authReady) {
-    return <div className="admin-loading">Checking manager session…</div>
+    return <LocalizedContent><div className="admin-loading">Checking manager session…</div></LocalizedContent>
   }
 
   if ((localMode && !localAdminUser) || (!localMode && !session)) {
     return (
-      <div className="admin-gate admin-login-gate">
+      <LocalizedContent><div className="admin-gate admin-login-gate">
         <div className="admin-login-layout">
           <section className="admin-login-intro" aria-label="Mian manager portal">
+            <div className="admin-language-switcher"><LanguageSwitcher /></div>
             <Link className="admin-login-brand" to="/">
               <span className="admin-brand-mark">M</span>
               <span>MIAN <small>TAILOR AND DESIGN</small></span>
@@ -740,13 +743,13 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
             <Link className="admin-login-back" to="/"><ArrowLeft size={15} /> Return to storefront</Link>
           </form>
         </div>
-      </div>
+      </div></LocalizedContent>
     )
   }
 
   if (!localMode && session && session.user.app_metadata.role !== 'admin') {
     return (
-      <div className="admin-gate">
+      <LocalizedContent><div className="admin-gate">
         <div className="admin-gate-card">
           <span className="admin-brand-mark">M</span>
           <p className="admin-kicker">Mian Tailor And Design</p>
@@ -756,12 +759,12 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
           <button className="admin-secondary-button" type="button" onClick={signOut}><LogOut size={15} /> Sign out</button>
           <Link className="admin-back-link" to="/"><ArrowLeft size={15} /> Back to storefront</Link>
         </div>
-      </div>
+      </div></LocalizedContent>
     )
   }
 
   return (
-    <div className="admin-shell">
+    <LocalizedContent><div className="admin-shell">
       <aside className="admin-sidebar">
         <Link className="admin-sidebar-brand" to="/"><span className="admin-brand-mark">M</span><span>MIAN <small>TAILOR AND DESIGN</small></span></Link>
         <p className="admin-sidebar-label">Workspace</p>
@@ -775,7 +778,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
       <main className="admin-main">
         <header className="admin-topbar">
           <div><p className="admin-kicker">Mian Tailor And Design / Admin</p><h1>{sections.find((item) => item.id === section)?.label}</h1></div>
-          <div className="admin-topbar-actions"><span className={localMode ? 'admin-sync-state local' : 'admin-sync-state'}><i />{localMode ? 'SQL customer directory · local catalog' : 'Supabase live sync'}</span>{(session?.user.email || localAdminUser?.username) && <span className="admin-user-email">{session?.user.email || localAdminUser?.username}</span>}<button className="admin-icon-button" type="button" onClick={() => void refreshData()} aria-label="Refresh data" disabled={loading}><RefreshCw size={16} /></button></div>
+          <div className="admin-topbar-actions"><LanguageSwitcher /><span className={localMode ? 'admin-sync-state local' : 'admin-sync-state'}><i />{localMode ? 'SQL customer directory · local catalog' : 'Supabase live sync'}</span>{(session?.user.email || localAdminUser?.username) && <span className="admin-user-email">{session?.user.email || localAdminUser?.username}</span>}<button className="admin-icon-button" type="button" onClick={() => void refreshData()} aria-label="Refresh data" disabled={loading}><RefreshCw size={16} /></button></div>
         </header>
         {error && <p className="admin-alert admin-page-alert" role="alert">{error}</p>}
         {notice && <p className="admin-notice" role="status"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Dismiss message"><X size={14} /></button></p>}
@@ -894,6 +897,6 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
           </section>
         )}
       </main>
-    </div>
+    </div></LocalizedContent>
   )
 }

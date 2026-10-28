@@ -276,7 +276,10 @@
 .admin-loading { min-height: 100vh; display: grid; place-items: center; background: #f5f3ee; color: #625d54; font-size: 12px; }
 .admin-login-gate { padding: clamp(20px, 5vw, 64px); }
 .admin-login-layout { width: min(100%, 930px); min-height: 560px; display: grid; grid-template-columns: minmax(0, .95fr) minmax(380px, 1.05fr); border: 1px solid #e2ded6; background: #fbfaf7; box-shadow: 0 24px 70px #241f1d12; }
-.admin-login-intro { padding: 38px; display: flex; flex-direction: column; justify-content: space-between; background: #292420; color: #f8f5ed; }
+.admin-login-intro { padding: 38px; display: flex; flex-direction: column; justify-content: space-between; position: relative; background: #292420; color: #f8f5ed; }
+.admin-language-switcher { position: absolute; top: 16px; right: 16px; }
+.admin-language-switcher select { border-color: #ffffff60; color: #f8f5ed; }
+.admin-language-switcher option { color: #241f1d; }
 .admin-login-brand { width: max-content; display: flex; align-items: center; gap: 12px; color: #f8f5ed; font-size: 11px; font-weight: 600; letter-spacing: .13em; text-decoration: none; }
 .admin-login-brand small { display: block; margin-top: 5px; color: #c2aa8a; font-size: 8px; letter-spacing: .17em; }
 .admin-login-story { padding: 42px 0; }

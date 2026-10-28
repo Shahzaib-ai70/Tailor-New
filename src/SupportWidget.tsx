@@ -3,6 +3,7 @@ import { MessageCircle, Send, X } from 'lucide-react'
 import type { SupportConversation, SupportMessage } from './types'
 import { customerChatSupabase, supabase } from './lib/supabase'
 import { readApiResponse } from './lib/api-response'
+import { useLocale } from './locale-context'
 import {
   readLocalWhatsAppNumber,
   subscribeToLocalAdminData,
@@ -16,6 +17,7 @@ type LocalSupportResponse = {
 }
 
 export default function SupportWidget() {
+  const { t } = useLocale()
   const localMode = !supabase
   const [open, setOpen] = useState(false)
   const [conversation, setConversation] = useState<SupportConversation | null>(null)
@@ -239,28 +241,28 @@ export default function SupportWidget() {
 
   return (
     <div className="support-widget">
-      {open && <section className="support-panel" aria-label="Customer service chat">
+      {open && <section className="support-panel" aria-label={t('Customer service chat')}>
         <header className="support-header">
           <span className="support-avatar"><MessageCircle size={19} /></span>
-          <div><strong>Customer care</strong><span><i />{localMode ? 'Secure chat · private to your account' : 'Live team chat'}</span></div>
-          <button type="button" onClick={() => setOpen(false)} aria-label="Close customer service chat"><X size={19} /></button>
+          <div><strong>{t('Customer care')}</strong><span><i />{t(localMode ? 'Secure chat · private to your account' : 'Live team chat')}</span></div>
+          <button type="button" onClick={() => setOpen(false)} aria-label={t('Close customer service chat')}><X size={19} /></button>
         </header>
-        <label className="support-name-label">Your name <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} onBlur={() => void saveCustomerName()} placeholder="How should we address you?" maxLength={80} /></label>
+        <label className="support-name-label">{t('Your name')} <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} onBlur={() => void saveCustomerName()} placeholder={t('How should we address you?')} maxLength={80} /></label>
         <div className="support-messages" ref={messageListRef} aria-live="polite">
-          <div className="support-welcome">Welcome! Tell us how we can help with your order, fit, or design.</div>
+          <div className="support-welcome">{t('Welcome! Tell us how we can help with your order, fit, or design.')}</div>
           {messages.map((item) => <div className={`support-message ${item.sender_role}`} key={item.id}><p>{item.body}</p><time>{new Date(item.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></div>)}
-          {loading && <p className="support-state">Connecting to customer care…</p>}
-          {error && <p className="support-error" role="alert">{error}</p>}
+          {loading && <p className="support-state">{t('Connecting to customer care…')}</p>}
+          {error && <p className="support-error" role="alert">{t(error)}</p>}
         </div>
-        {whatsAppHref && <a className="support-whatsapp-link" href={whatsAppHref} target="_blank" rel="noreferrer">Continue on WhatsApp</a>}
-        {!whatsAppHref && <p className="support-whatsapp-note">WhatsApp support number will appear here once configured.</p>}
+        {whatsAppHref && <a className="support-whatsapp-link" href={whatsAppHref} target="_blank" rel="noreferrer">{t('Continue on WhatsApp')}</a>}
+        {!whatsAppHref && <p className="support-whatsapp-note">{t('WhatsApp support number will appear here once configured.')}</p>}
         <form className="support-compose" onSubmit={sendMessage}>
-          <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Write your message…" maxLength={2000} aria-label="Your message" />
-          <button type="submit" disabled={sending || loading || !conversation || conversation.status !== 'open' || !message.trim()} aria-label="Send message"><Send size={17} /></button>
+          <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={t('Write your message…')} maxLength={2000} aria-label={t('Your message')} />
+          <button type="submit" disabled={sending || loading || !conversation || conversation.status !== 'open' || !message.trim()} aria-label={t('Send message')}><Send size={17} /></button>
         </form>
       </section>}
-      <button className="support-launcher" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={open ? 'Close customer service' : 'Chat with customer service'}>
-        {open ? <X size={20} /> : <MessageCircle size={20} />}<span>{open ? 'Close' : 'Need help?'}</span>
+      <button className="support-launcher" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={t(open ? 'Close customer service' : 'Chat with customer service')}>
+        {open ? <X size={20} /> : <MessageCircle size={20} />}<span>{t(open ? 'Close' : 'Need help?')}</span>
       </button>
     </div>
   )

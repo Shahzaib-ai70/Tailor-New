@@ -11,6 +11,8 @@ A responsive storefront prototype for Pakistani men's shalwar kameez, built with
 - `/fitting` appointment request form
 - `/account` customer registration and sign-in, backed by the self-hosted account API
 
+The frontend supports English and Urdu. Use the language selector to translate the storefront, account screens, shopping bag, support widget, and admin portal. The selected language is saved in this browser; Urdu switches the layout to right-to-left and uses the Noto Nastaliq Urdu font.
+
 ## Run locally
 
 ```sh

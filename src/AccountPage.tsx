@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { ArrowLeft, LogOut } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { readApiResponse } from './lib/api-response'
+import { useLocale } from './locale-context'
 import './Account.css'
 
 type Account = {
@@ -25,6 +26,7 @@ async function accountRequest(path: string, body?: object): Promise<Account | nu
 }
 
 export default function AccountPage() {
+  const { t } = useLocale()
   const [account, setAccount] = useState<Account | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -84,34 +86,34 @@ export default function AccountPage() {
   return (
     <section className="account-page section-wrap">
       <div className="account-card">
-        <p className="eyebrow">Your Mian account</p>
-        {loading ? <p className="account-copy">Checking your account…</p> : account ? (
+        <p className="eyebrow">{t('Your Mian account')}</p>
+        {loading ? <p className="account-copy">{t('Checking your account…')}</p> : account ? (
           <>
-            <h1>Welcome, {account.fullName}.</h1>
-            <p className="account-copy">Signed in as <strong>{account.email}</strong></p>
-            {notice && <p className="account-notice" role="status">{notice}</p>}
-            {error && <p className="account-error" role="alert">{error}</p>}
-            <button className="button button-dark account-submit" type="button" onClick={() => void signOut()}><LogOut size={15} /> Sign out</button>
+            <h1>{t('Welcome,')} {account.fullName}.</h1>
+            <p className="account-copy">{t('Signed in as')} <strong>{account.email}</strong></p>
+            {notice && <p className="account-notice" role="status">{t(notice)}</p>}
+            {error && <p className="account-error" role="alert">{t(error)}</p>}
+            <button className="button button-dark account-submit" type="button" onClick={() => void signOut()}><LogOut size={15} /> {t('Sign out')}</button>
           </>
         ) : (
           <>
-            <h1>{mode === 'sign-in' ? 'Welcome back.' : 'Create your account.'}</h1>
-            <p className="account-copy">{mode === 'sign-in' ? 'Sign in to your customer account.' : 'Register for your Mian customer account.'}</p>
-            <div className="account-tabs" role="tablist" aria-label="Account access">
-              <button type="button" role="tab" aria-selected={mode === 'sign-in'} className={mode === 'sign-in' ? 'active' : ''} onClick={() => { setMode('sign-in'); setError(''); setNotice('') }}>Sign in</button>
-              <button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setError(''); setNotice('') }}>Register</button>
+            <h1>{t(mode === 'sign-in' ? 'Welcome back.' : 'Create your account.')}</h1>
+            <p className="account-copy">{t(mode === 'sign-in' ? 'Sign in to your customer account.' : 'Register for your Mian customer account.')}</p>
+            <div className="account-tabs" role="tablist" aria-label={t('Account access')}>
+              <button type="button" role="tab" aria-selected={mode === 'sign-in'} className={mode === 'sign-in' ? 'active' : ''} onClick={() => { setMode('sign-in'); setError(''); setNotice('') }}>{t('Sign in')}</button>
+              <button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setError(''); setNotice('') }}>{t('Register')}</button>
             </div>
             <form className="account-form" onSubmit={submit}>
-              {mode === 'register' && <label>Full name<input autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={120} required /></label>}
-              <label>Email address<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} required /></label>
-              <label>Password<input type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} maxLength={128} required /></label>
-              {notice && <p className="account-notice" role="status">{notice}</p>}
-              {error && <p className="account-error" role="alert">{error}</p>}
-              <button className="button button-dark account-submit" type="submit" disabled={saving}>{saving ? 'Please wait…' : mode === 'sign-in' ? 'Sign in' : 'Create account'}</button>
+              {mode === 'register' && <label>{t('Full name')}<input autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={120} required /></label>}
+              <label>{t('Email address')}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} required /></label>
+              <label>{t('Password')}<input type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} maxLength={128} required /></label>
+              {notice && <p className="account-notice" role="status">{t(notice)}</p>}
+              {error && <p className="account-error" role="alert">{t(error)}</p>}
+              <button className="button button-dark account-submit" type="submit" disabled={saving}>{t(saving ? 'Please wait…' : mode === 'sign-in' ? 'Sign in' : 'Create account')}</button>
             </form>
           </>
         )}
-        <Link className="account-back-link" to="/"><ArrowLeft size={14} /> Back to storefront</Link>
+        <Link className="account-back-link" to="/"><ArrowLeft size={14} /> {t('Back to storefront')}</Link>
       </div>
     </section>
   )
