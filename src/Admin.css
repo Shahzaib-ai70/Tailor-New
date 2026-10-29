@@ -370,3 +370,34 @@
   .admin-login-card.admin-login-v2 { padding: 28px 24px; }
   .admin-login-heading h2 { font-size: 30px; }
 }
+.admin-payment-method { margin: 0 0 15px; padding: 17px; border: 1px solid #e2ded6; }
+.admin-payment-method legend { padding: 0 6px; color: #302a26; font-size: 11px; }
+.admin-payment-method legend label { display: flex; align-items: center; gap: 8px; }
+.admin-payment-method legend input { accent-color: #754253; }
+.admin-payment-method > label { max-width: 700px; margin-top: 12px; display: grid; gap: 7px; color: #625d54; font-size: 10px; }
+.admin-payment-method input:not([type="checkbox"]), .admin-payment-method textarea { width: 100%; min-height: 39px; padding: 9px 10px; border: 1px solid #ddd6c9; background: white; color: #241f1d; font: inherit; font-size: 10px; }
+.admin-payment-method textarea { resize: vertical; }
+.admin-payment-method input:focus, .admin-payment-method textarea:focus { outline: 2px solid #754253; outline-offset: 1px; }
+.admin-payment-fields { max-width: 900px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.admin-payment-fields label { display: grid; gap: 7px; color: #625d54; font-size: 10px; }
+.admin-settings-content code { padding: 2px 4px; background: #f0eae3; color: #754253; }
+.admin-order-list { padding: 15px; display: grid; gap: 13px; }
+.admin-order-card { padding: 17px; border: 1px solid #e2ded6; background: #fff; }
+.admin-order-card > header, .admin-order-card > footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.admin-order-card > header > div { display: grid; gap: 5px; }
+.admin-order-card > header strong { color: #302a26; font-size: 12px; font-weight: 600; }
+.admin-order-card > header > div > span { color: #777268; font-size: 9px; }
+.admin-order-contact { margin-top: 13px; display: grid; gap: 5px; color: #68645b; font-size: 10px; overflow-wrap: anywhere; }
+.admin-order-contact a { width: fit-content; color: #754253; text-decoration: none; }
+.admin-order-items { margin-top: 12px; padding: 10px 0; border-top: 1px solid #eeeae3; border-bottom: 1px solid #eeeae3; }
+.admin-order-items p { margin: 0; padding: 5px 0; display: flex; justify-content: space-between; gap: 12px; color: #68645b; font-size: 9px; line-height: 1.5; }
+.admin-order-items strong { color: #302a26; white-space: nowrap; }
+.admin-order-card > footer { padding-top: 11px; color: #777268; font-size: 9px; text-transform: capitalize; }
+.admin-order-card > footer strong { color: #302a26; font-size: 12px; }
+.admin-order-note { margin: 10px 0 0; padding: 9px; background: #f8f6f1; color: #68645b; font-size: 10px; white-space: pre-wrap; }
+@media (max-width: 620px) {
+  .admin-payment-method { padding: 12px; }
+  .admin-order-list { padding: 10px; }
+  .admin-order-card { padding: 12px; }
+  .admin-order-card > header { align-items: flex-start; flex-direction: column; }
+}

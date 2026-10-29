@@ -146,13 +146,38 @@ export function createAccountApp({
       updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS catalog_products_active_name ON catalog_products(active, name);
+    CREATE TABLE IF NOT EXISTS business_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS store_orders (
+      id TEXT PRIMARY KEY,
+      order_number TEXT NOT NULL UNIQUE,
+      customer_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      address TEXT NOT NULL,
+      city TEXT NOT NULL,
+      province TEXT NOT NULL,
+      postal_code TEXT NOT NULL,
+      notes TEXT NOT NULL,
+      payment_method TEXT NOT NULL,
+      payment_status TEXT NOT NULL CHECK (payment_status IN ('awaiting_payment', 'paid')),
+      status TEXT NOT NULL CHECK (status IN ('awaiting_payment', 'processing', 'shipped', 'completed', 'cancelled')),
+      subtotal REAL NOT NULL,
+      items_json TEXT NOT NULL,
+      payment_details_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS store_orders_created_at ON store_orders(created_at DESC);
   `)
 
   const app = express()
   app.disable('x-powered-by')
   app.set('trust proxy', 1)
   app.use(express.json({ limit: '1mb', strict: true }))
-  app.use(['/api/account', '/api/admin', '/api/support'], (_request, response, next) => {
+  app.use(['/api/account', '/api/admin', '/api/support', '/api/orders', '/api/payment-methods'], (_request, response, next) => {
     response.setHeader('Cache-Control', 'no-store')
     next()
   })
@@ -384,6 +409,106 @@ export function createAccountApp({
     )
   }
 
+  const paymentMethodDefaults = [
+    { id: 'card', enabled: false, instructions: '', checkoutUrl: '' },
+    { id: 'bank_transfer', enabled: false, instructions: '', accountName: '', accountNumber: '', iban: '' },
+    { id: 'easypaisa', enabled: false, instructions: '', accountName: '', accountNumber: '' },
+    { id: 'jazzcash', enabled: false, instructions: '', accountName: '', accountNumber: '' },
+  ]
+
+  function readPaymentMethods() {
+    const saved = database.prepare("SELECT value FROM business_settings WHERE key = 'payment_methods'").get()
+    return saved ? JSON.parse(saved.value) : paymentMethodDefaults
+  }
+
+  function validatePaymentMethods(value) {
+    if (!Array.isArray(value) || value.length !== paymentMethodDefaults.length) return null
+    const methods = new Map(value.map((method) => [method?.id, method]))
+    if (paymentMethodDefaults.some(({ id }) => !methods.has(id)) || methods.size !== paymentMethodDefaults.length) return null
+    const clean = []
+    for (const defaults of paymentMethodDefaults) {
+      const method = methods.get(defaults.id)
+      if (!method || typeof method.enabled !== 'boolean'
+        || typeof method.instructions !== 'string' || method.instructions.length > 1000) return null
+      const result = { ...defaults, enabled: method.enabled, instructions: method.instructions.trim() }
+      if (defaults.id === 'card') {
+        if (typeof method.checkoutUrl !== 'string' || method.checkoutUrl.length > 2048) return null
+        const checkoutUrl = method.checkoutUrl.trim()
+        if (method.enabled) {
+          try {
+            if (new URL(checkoutUrl).protocol !== 'https:') return null
+          } catch {
+            return null
+          }
+        } else if (checkoutUrl) {
+          try {
+            if (new URL(checkoutUrl).protocol !== 'https:') return null
+          } catch {
+            return null
+          }
+        }
+        result.checkoutUrl = checkoutUrl
+      } else {
+        if (typeof method.accountName !== 'string' || method.accountName.length > 120
+          || typeof method.accountNumber !== 'string' || method.accountNumber.length > 80) return null
+        result.accountName = method.accountName.trim()
+        result.accountNumber = method.accountNumber.trim()
+        if (defaults.id === 'bank_transfer') {
+          if (typeof method.iban !== 'string' || method.iban.length > 50) return null
+          result.iban = method.iban.trim()
+        }
+        if (method.enabled && (!result.accountName || !result.accountNumber)) return null
+      }
+      clean.push(result)
+    }
+    return clean
+  }
+
+  function validateOrderDetails(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const fields = ['name', 'email', 'phone', 'address', 'city', 'province', 'postalCode', 'notes']
+    if (fields.some((field) => typeof value[field] !== 'string')) return null
+    const details = Object.fromEntries(fields.map((field) => [field, value[field].trim()]))
+    const email = normalizeEmail(details.email)
+    if (details.name.length < 2 || details.name.length > 120
+      || !email
+      || details.phone.length < 7 || details.phone.length > 25
+      || !/^[+0-9][0-9()+\-\s]{6,24}$/.test(details.phone)
+      || details.address.length < 5 || details.address.length > 300
+      || details.city.length < 2 || details.city.length > 100
+      || details.province.length < 2 || details.province.length > 100
+      || details.postalCode.length > 20 || details.notes.length > 1000) return null
+    details.email = email
+    return details
+  }
+
+  function createOrderNumber() {
+    return `MTD-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString('hex').toUpperCase()}`
+  }
+
+  function serializeOrder(row, includeCustomerDetails = true) {
+    return {
+      id: row.id,
+      orderNumber: row.order_number,
+      customerName: row.customer_name,
+      ...(includeCustomerDetails ? {
+        email: row.email,
+        phone: row.phone,
+        address: row.address,
+        city: row.city,
+        province: row.province,
+        postalCode: row.postal_code,
+        notes: row.notes,
+      } : {}),
+      paymentMethod: row.payment_method,
+      paymentStatus: row.payment_status,
+      status: row.status,
+      subtotal: row.subtotal,
+      items: JSON.parse(row.items_json),
+      createdAt: row.created_at,
+    }
+  }
+
   app.get('/api/account', (request, response) => {
     database.prepare('DELETE FROM customer_sessions WHERE expires_at <= ?').run(Date.now())
     const token = cookieValue(request, 'mian_session')
@@ -397,6 +522,120 @@ export function createAccountApp({
       SELECT * FROM catalog_products WHERE active = 1 ORDER BY name
     `).all()
     response.json({ products: rows.map(serializeProduct) })
+  })
+
+  app.get('/api/payment-methods', (_request, response) => {
+    response.json({ methods: readPaymentMethods().filter((method) => method.enabled) })
+  })
+
+  app.post('/api/orders', allowSameOrigin, rateLimit, (request, response) => {
+    const details = validateOrderDetails(request.body?.customer)
+    const methodId = request.body?.paymentMethod
+    const incomingItems = request.body?.items
+    if (!details || !['card', 'bank_transfer', 'easypaisa', 'jazzcash'].includes(methodId)
+      || !Array.isArray(incomingItems) || incomingItems.length < 1 || incomingItems.length > 50) {
+      response.status(400).json({ error: 'Check the contact, delivery, and order details and try again.' })
+      return
+    }
+
+    const method = readPaymentMethods().find((item) => item.id === methodId && item.enabled)
+    if (!method) {
+      response.status(409).json({ error: 'That payment method is not currently available. Refresh the page and choose another.' })
+      return
+    }
+    if (methodId === 'card' && !method.checkoutUrl) {
+      response.status(409).json({ error: 'Secure card checkout is not configured yet. Choose another payment method or contact customer service.' })
+      return
+    }
+
+    let subtotal = 0
+    const items = []
+    for (const item of incomingItems) {
+      if (!item || typeof item.productId !== 'string' || typeof item.color !== 'string'
+        || typeof item.size !== 'string' || !Number.isInteger(item.quantity)
+        || item.quantity < 1 || item.quantity > 10) {
+        response.status(400).json({ error: 'One or more cart items are invalid. Review your bag and try again.' })
+        return
+      }
+      const row = database.prepare('SELECT * FROM catalog_products WHERE id = ? AND active = 1').get(item.productId)
+      if (!row) {
+        response.status(409).json({ error: 'A product in your bag is no longer available. Review your bag and try again.' })
+        return
+      }
+      const product = serializeProduct(row)
+      if (!['S', 'M', 'L', 'XL', 'XXL'].includes(item.size)
+        || !product.colorways.some((colorway) => colorway.name === item.color)) {
+        response.status(400).json({ error: 'A product color or size is invalid. Review your bag and try again.' })
+        return
+      }
+      subtotal += product.price * item.quantity
+      items.push({
+        productId: product.id,
+        name: product.name,
+        color: item.color,
+        size: item.size,
+        quantity: item.quantity,
+        unitPrice: product.price,
+      })
+    }
+
+    const orderNumber = createOrderNumber()
+    const order = {
+      id: randomBytes(24).toString('hex'),
+      orderNumber,
+      ...details,
+      paymentMethod: methodId,
+      paymentStatus: 'awaiting_payment',
+      status: 'awaiting_payment',
+      subtotal,
+      items,
+      paymentDetails: methodId === 'card'
+        ? {
+          ...method,
+          checkoutUrl: method.checkoutUrl
+            .replaceAll('{amount}', encodeURIComponent(String(subtotal)))
+            .replaceAll('{order_number}', encodeURIComponent(orderNumber)),
+        }
+        : method,
+      createdAt: new Date().toISOString(),
+    }
+    database.prepare(`
+      INSERT INTO store_orders (
+        id, order_number, customer_name, email, phone, address, city, province,
+        postal_code, notes, payment_method, payment_status, status, subtotal,
+        items_json, payment_details_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      order.id, order.orderNumber, order.name, order.email, order.phone, order.address,
+      order.city, order.province, order.postalCode, order.notes, order.paymentMethod,
+      order.paymentStatus, order.status, order.subtotal, JSON.stringify(order.items),
+      JSON.stringify(order.paymentDetails), order.createdAt,
+    )
+    const savedOrder = database.prepare('SELECT * FROM store_orders WHERE id = ?').get(order.id)
+    response.status(201).json({
+      order: {
+        ...serializeOrder(savedOrder),
+        paymentDetails: JSON.parse(savedOrder.payment_details_json),
+      },
+    })
+  })
+
+  app.get('/api/orders/:id', (request, response) => {
+    if (!/^[\da-f]{48}$/.test(request.params.id)) {
+      response.status(404).json({ error: 'Order not found.' })
+      return
+    }
+    const row = database.prepare('SELECT * FROM store_orders WHERE id = ?').get(request.params.id)
+    if (!row) {
+      response.status(404).json({ error: 'Order not found.' })
+      return
+    }
+    response.json({
+      order: {
+        ...serializeOrder(row, false),
+        paymentDetails: JSON.parse(row.payment_details_json),
+      },
+    })
   })
 
   app.get('/api/support', (request, response) => {
@@ -601,6 +840,58 @@ export function createAccountApp({
       ORDER BY datetime(created_at) DESC, id DESC
     `).all()
     response.json({ customers })
+  })
+
+  app.use(['/api/admin/payment-methods', '/api/admin/orders'], (request, response, next) => {
+    if (!getAdminSession(request, response)) {
+      response.status(401).json({ error: 'Manager sign-in is required to manage payment settings and orders.' })
+      return
+    }
+    next()
+  })
+
+  app.get('/api/admin/payment-methods', (_request, response) => {
+    response.json({ methods: readPaymentMethods() })
+  })
+
+  app.put('/api/admin/payment-methods', allowSameOrigin, (request, response) => {
+    const methods = validatePaymentMethods(request.body?.methods)
+    if (!methods) {
+      response.status(400).json({ error: 'Check the payment methods. Enabled methods need valid account details; card checkout must use an HTTPS hosted payment URL.' })
+      return
+    }
+    database.prepare(`
+      INSERT INTO business_settings (key, value, updated_at)
+      VALUES ('payment_methods', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(JSON.stringify(methods), new Date().toISOString())
+    response.json({ methods })
+  })
+
+  app.get('/api/admin/orders', (_request, response) => {
+    const rows = database.prepare('SELECT * FROM store_orders ORDER BY created_at DESC').all()
+    response.json({ orders: rows.map((row) => serializeOrder(row)) })
+  })
+
+  app.patch('/api/admin/orders/:id', allowSameOrigin, (request, response) => {
+    const allowedStatuses = ['awaiting_payment', 'processing', 'shipped', 'completed', 'cancelled']
+    const status = request.body?.status
+    if (!allowedStatuses.includes(status)) {
+      response.status(400).json({ error: 'Choose a valid order status.' })
+      return
+    }
+    const order = database.prepare('SELECT * FROM store_orders WHERE id = ?').get(request.params.id)
+    if (!order) {
+      response.status(404).json({ error: 'Order not found.' })
+      return
+    }
+    const paymentStatus = status === 'awaiting_payment' || status === 'cancelled'
+      ? order.payment_status
+      : 'paid'
+    database.prepare('UPDATE store_orders SET status = ?, payment_status = ? WHERE id = ?')
+      .run(status, paymentStatus, order.id)
+    const updated = database.prepare('SELECT * FROM store_orders WHERE id = ?').get(order.id)
+    response.json({ order: serializeOrder(updated) })
   })
 
   app.use('/api/admin/products', (request, response, next) => {

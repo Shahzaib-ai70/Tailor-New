@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowLeft, ArrowRight, Check, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShieldCheck, ShoppingBag, Users, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CreditCard, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShieldCheck, ShoppingBag, Users, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import type { CustomerProfile, FittingRequest, Product, SupportConversation, SupportMessage } from './types'
+import type { CustomerProfile, FittingRequest, PaymentMethod, Product, StoreOrder, SupportConversation, SupportMessage } from './types'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { readApiResponse } from './lib/api-response'
 import { getLocalAdminSnapshot, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
@@ -11,13 +11,15 @@ import { LocalizedContent } from './locale'
 import LanguageSwitcher from './LanguageSwitcher'
 import './Admin.css'
 
-type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'support' | 'settings'
+type AdminSection = 'overview' | 'products' | 'customers' | 'fittings' | 'orders' | 'support' | 'settings'
 type LocalAdminUser = { username: string }
 type AccountDirectoryCustomer = { id: number; fullName: string; email: string; createdAt: string }
 type AccountDirectoryResponse = { customers?: AccountDirectoryCustomer[]; error?: string }
 type AdminSessionResponse = { user?: LocalAdminUser | null; error?: string }
 type AdminSupportResponse = { conversations?: SupportConversation[]; messages?: SupportMessage[]; error?: string }
 type AdminProductsResponse = { products?: Product[]; product?: Product; error?: string }
+type AdminOrdersResponse = { orders?: StoreOrder[]; order?: StoreOrder; error?: string }
+type AdminPaymentMethodsResponse = { methods?: PaymentMethod[]; error?: string }
 type ProductDraft = {
   id: string
   name: string
@@ -71,6 +73,7 @@ const sections: { id: AdminSection; label: string; icon: typeof Package }[] = [
   { id: 'products', label: 'Products', icon: Package },
   { id: 'customers', label: 'Customers', icon: Users },
   { id: 'fittings', label: 'Fitting requests', icon: Scissors },
+  { id: 'orders', label: 'Orders', icon: ShoppingBag },
   { id: 'support', label: 'Live support', icon: Headset },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
@@ -110,6 +113,13 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const [storedConversations, setConversations] = useState<SupportConversation[]>([])
   const [storedSupportMessages, setSupportMessages] = useState<SupportMessage[]>([])
   const [customerProfiles, setCustomerProfiles] = useState<CustomerProfile[]>([])
+  const [orders, setOrders] = useState<StoreOrder[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
+    { id: 'card', enabled: false, instructions: '', checkoutUrl: '' },
+    { id: 'bank_transfer', enabled: false, instructions: '', accountName: '', accountNumber: '', iban: '' },
+    { id: 'easypaisa', enabled: false, instructions: '', accountName: '', accountNumber: '' },
+    { id: 'jazzcash', enabled: false, instructions: '', accountName: '', accountNumber: '' },
+  ])
   const [customerLoadError, setCustomerLoadError] = useState('')
   const [selectedConversationId, setSelectedConversationId] = useState(() => searchParams.get('conversation') ?? '')
   const [reply, setReply] = useState('')
@@ -199,6 +209,16 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         setProducts(loadedProducts)
         setRequests(readLocalRequests())
         setWhatsAppNumber(readLocalWhatsAppNumber())
+        const [paymentResponse, ordersResponse] = await Promise.all([
+          fetch('/api/admin/payment-methods'),
+          fetch('/api/admin/orders'),
+        ])
+        const paymentResult = await readApiResponse<AdminPaymentMethodsResponse>(paymentResponse)
+        const ordersResult = await readApiResponse<AdminOrdersResponse>(ordersResponse)
+        if (!paymentResponse.ok) throw new Error(paymentResult.error ?? 'Could not load payment settings.')
+        if (!ordersResponse.ok) throw new Error(ordersResult.error ?? 'Could not load customer orders.')
+        setPaymentMethods(paymentResult.methods ?? [])
+        setOrders(ordersResult.orders ?? [])
         const supportResponse = await fetch('/api/admin/support')
         const supportResult = await readApiResponse<AdminSupportResponse>(supportResponse)
         if (!supportResponse.ok) throw new Error(supportResult.error ?? 'Could not load customer conversations.')
@@ -325,10 +345,54 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   }, [localAdminUser, localMode, refreshData, session])
 
   useEffect(() => {
-    if (section !== 'customers' || (localMode ? !localAdminUser : session?.user.app_metadata.role !== 'admin')) return
+    if (!['customers', 'orders'].includes(section) || (localMode ? !localAdminUser : session?.user.app_metadata.role !== 'admin')) return
     const interval = window.setInterval(() => { void refreshData({ silent: true }) }, 30_000)
     return () => window.clearInterval(interval)
   }, [localAdminUser, localMode, refreshData, section, session])
+
+  function updatePaymentMethod(id: PaymentMethod['id'], patch: Partial<PaymentMethod>) {
+    setPaymentMethods((current) => current.map((method) => method.id === id ? { ...method, ...patch } : method))
+  }
+
+  async function savePaymentMethods(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch('/api/admin/payment-methods', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ methods: paymentMethods }),
+      })
+      const result = await readApiResponse<AdminPaymentMethodsResponse>(response)
+      if (!response.ok) throw new Error(result.error ?? 'Could not save payment settings.')
+      if (!result.methods) throw new Error('The account service did not confirm the payment settings.')
+      setPaymentMethods(result.methods)
+      setNotice('Payment methods saved. Customers can now see the enabled options at checkout.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save payment settings.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function updateOrderStatus(order: StoreOrder, status: StoreOrder['status']) {
+    setError('')
+    try {
+      const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const result = await readApiResponse<AdminOrdersResponse>(response)
+      if (!response.ok) throw new Error(result.error ?? 'Could not update this order.')
+      if (!result.order) throw new Error('The account service did not confirm the order update.')
+      setOrders((current) => current.map((item) => item.id === result.order!.id ? result.order! : item))
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Could not update this order.')
+    }
+  }
 
   useEffect(() => {
     if (localMode || !supabase || session?.user.app_metadata.role !== 'admin') return
@@ -769,7 +833,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         <Link className="admin-sidebar-brand" to="/"><span className="admin-brand-mark">M</span><span>MIAN <small>TAILOR AND DESIGN</small></span></Link>
         <p className="admin-sidebar-label">Workspace</p>
         <nav aria-label="Admin sections">
-          {sections.map(({ id, label, icon: Icon }) => <button className={section === id ? 'admin-nav-item active' : 'admin-nav-item'} key={id} type="button" onClick={() => { navigateSection(id); setNotice('') }}><Icon size={17} />{label}{id === 'fittings' && requests.some((request) => request.status === 'new') && <span className="admin-nav-count">{requests.filter((request) => request.status === 'new').length}</span>}{id === 'support' && conversations.some((conversation) => conversation.status === 'open') && <span className="admin-nav-count">{conversations.filter((conversation) => conversation.status === 'open').length}</span>}</button>)}
+          {sections.map(({ id, label, icon: Icon }) => <button className={section === id ? 'admin-nav-item active' : 'admin-nav-item'} key={id} type="button" onClick={() => { navigateSection(id); setNotice('') }}><Icon size={17} />{label}{id === 'fittings' && requests.some((request) => request.status === 'new') && <span className="admin-nav-count">{requests.filter((request) => request.status === 'new').length}</span>}{id === 'orders' && orders.some((order) => order.status === 'awaiting_payment') && <span className="admin-nav-count">{orders.filter((order) => order.status === 'awaiting_payment').length}</span>}{id === 'support' && conversations.some((conversation) => conversation.status === 'open') && <span className="admin-nav-count">{conversations.filter((conversation) => conversation.status === 'open').length}</span>}</button>)}
         </nav>
         <Link className="admin-back-link" to="/"><ArrowLeft size={15} /> View storefront</Link>
         {(session || localAdminUser) && <button className="admin-signout" type="button" onClick={() => void signOut()}><LogOut size={16} /> Sign out</button>}
@@ -790,6 +854,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
             <div className="admin-stat-grid">
               <article><span className="admin-stat-icon"><Package size={18} /></span><p>Products</p><strong>{products.length}</strong><small>{products.filter((product) => product.active !== false).length} active in storefront</small></article>
               <article><span className="admin-stat-icon"><Scissors size={18} /></span><p>Fitting requests</p><strong>{requests.length}</strong><small>{requests.filter((request) => request.status === 'new').length} new to review</small></article>
+              <article><span className="admin-stat-icon"><ShoppingBag size={18} /></span><p>Orders</p><strong>{orders.length}</strong><small>{orders.filter((order) => order.status === 'awaiting_payment').length} awaiting payment</small></article>
               <article><span className="admin-stat-icon"><Users size={18} /></span><p>Customers</p><strong>{customerProfiles.length}</strong><small>Registered customer accounts</small></article>
               <article><span className="admin-stat-icon"><Headset size={18} /></span><p>Live support</p><strong>{conversations.filter((item) => item.status === 'open').length}</strong><small>{supportMessages.length} messages across all chats</small></article>
               <article><span className="admin-stat-icon"><ShoppingBag size={18} /></span><p>Collection value</p><strong>{money.format(products.filter((product) => product.active !== false).reduce((total, product) => total + product.price, 0))}</strong><small>Combined price of active designs</small></article>
@@ -833,6 +898,24 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
 
         {section === 'fittings' && (
           <section className="admin-content"><div className="admin-panel"><div className="admin-panel-heading"><div><p className="admin-kicker">Customer appointments</p><h2>{requests.length} fitting requests</h2></div></div>{requests.length === 0 ? <p className="admin-empty">No fitting requests yet. Customer submissions will show up here.</p> : <div className="admin-table-wrap"><table className="admin-table admin-fitting-table"><thead><tr><th>Customer</th><th>Occasion & notes</th><th>Received</th><th>Status</th></tr></thead><tbody>{requests.map((request) => <tr key={request.id}><td><strong>{request.name}</strong><a href={`mailto:${request.email}`}>{request.email}</a><a href={`tel:${request.phone}`}>{request.phone}</a></td><td><strong>{request.occasion}</strong><p>{request.notes || 'No additional notes'}</p></td><td>{formatAdminDate(request.created_at)}</td><td><select className="admin-status-select" value={request.status} onChange={(event) => { const status = event.target.value; if (status === 'new' || status === 'contacted' || status === 'completed') void updateRequestStatus(request.id, status) }} aria-label={`Update request status for ${request.name}`}><option value="new">New</option><option value="contacted">Contacted</option><option value="completed">Completed</option></select></td></tr>)}</tbody></table></div>}</div></section>
+        )}
+
+        {section === 'orders' && (
+          <section className="admin-content">
+            <div className="admin-panel">
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Store orders</p><h2>{orders.length} customer orders</h2></div><span className="admin-status active">{orders.filter((order) => order.status === 'awaiting_payment').length} awaiting payment</span></div>
+              {orders.length === 0 ? <p className="admin-empty">Customer orders will appear here after checkout.</p> : <div className="admin-order-list">{orders.map((order) => <article className="admin-order-card" key={order.id}>
+                <header><div><p className="admin-kicker">{order.orderNumber}</p><strong>{order.customerName}</strong><span>{formatAdminDateTime(order.createdAt)}</span></div><select className="admin-status-select" value={order.status} onChange={(event) => {
+                  const status = event.target.value
+                  if (['awaiting_payment', 'processing', 'shipped', 'completed', 'cancelled'].includes(status)) void updateOrderStatus(order, status as StoreOrder['status'])
+                }} aria-label={`Update order status for ${order.orderNumber}`}><option value="awaiting_payment">Awaiting payment</option><option value="processing">Processing / paid</option><option value="shipped">Shipped</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></header>
+                <div className="admin-order-contact"><a href={`mailto:${order.email}`}>{order.email}</a><a href={`tel:${order.phone}`}>{order.phone}</a><span>{order.address}, {order.city}, {order.province} {order.postalCode}</span></div>
+                <div className="admin-order-items">{order.items.map((item, index) => <p key={`${item.productId}-${index}`}><span>{item.name} · {item.color} · {item.size} × {item.quantity}</span><strong>{money.format(item.unitPrice * item.quantity)}</strong></p>)}</div>
+                <footer><span>{order.paymentMethod.replace('_', ' ')} · {order.paymentStatus.replace('_', ' ')}</span><strong>{money.format(order.subtotal)}</strong></footer>
+                {order.notes && <p className="admin-order-note">{order.notes}</p>}
+              </article>)}</div>}
+            </div>
+          </section>
         )}
 
         {section === 'customers' && (
@@ -882,6 +965,27 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
 
         {section === 'settings' && (
           <section className="admin-content">
+            <form className="admin-panel admin-settings-panel" onSubmit={savePaymentMethods}>
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Checkout</p><h2>Customer payment methods</h2></div><CreditCard size={20} /></div>
+              <div className="admin-settings-content">
+                <p>Enable the payment options customers may select. Enter the receiving account details for mobile wallets and bank transfers. Card payments must use a secure hosted checkout page; this website never collects card numbers. Optional card-link placeholders: <code>{'{amount}'}</code> and <code>{'{order_number}'}</code>.</p>
+                {paymentMethods.map((method) => <fieldset className="admin-payment-method" key={method.id}>
+                  <legend><label><input type="checkbox" checked={method.enabled} onChange={(event) => updatePaymentMethod(method.id, { enabled: event.target.checked })} /> {method.id === 'bank_transfer' ? 'Bank transfer' : method.id === 'easypaisa' ? 'Easypaisa' : method.id === 'jazzcash' ? 'JazzCash' : 'Card'}</label></legend>
+                  {method.id === 'card' ? <>
+                    <label>Secure hosted checkout URL<input type="url" inputMode="url" value={method.checkoutUrl ?? ''} onChange={(event) => updatePaymentMethod(method.id, { checkoutUrl: event.target.value })} placeholder="https://your-payment-provider.example/checkout?amount={amount}&order={order_number}" /></label>
+                    <label>Instructions (optional)<textarea rows={2} maxLength={1000} value={method.instructions} onChange={(event) => updatePaymentMethod(method.id, { instructions: event.target.value })} placeholder="Card payment is handled securely by our payment provider." /></label>
+                  </> : <>
+                    <div className="admin-payment-fields">
+                      <label>Account holder name<input value={method.accountName ?? ''} onChange={(event) => updatePaymentMethod(method.id, { accountName: event.target.value })} maxLength={120} /></label>
+                      <label>{method.id === 'bank_transfer' ? 'Account number' : 'Account / mobile number'}<input value={method.accountNumber ?? ''} onChange={(event) => updatePaymentMethod(method.id, { accountNumber: event.target.value })} maxLength={80} /></label>
+                      {method.id === 'bank_transfer' && <label>IBAN (optional)<input value={method.iban ?? ''} onChange={(event) => updatePaymentMethod(method.id, { iban: event.target.value })} maxLength={50} /></label>}
+                    </div>
+                    <label>Customer instructions (optional)<textarea rows={2} maxLength={1000} value={method.instructions} onChange={(event) => updatePaymentMethod(method.id, { instructions: event.target.value })} placeholder="Add any payment instructions for customers." /></label>
+                  </>}
+                </fieldset>)}
+                <div className="admin-form-actions"><button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save payment methods'}</button></div>
+              </div>
+            </form>
             <form className="admin-panel admin-settings-panel" onSubmit={saveWhatsAppSettings}>
               <div className="admin-panel-heading"><div><p className="admin-kicker">Customer service</p><h2>WhatsApp contact</h2></div></div>
               <div className="admin-settings-content">

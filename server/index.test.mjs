@@ -240,6 +240,100 @@ test('manager can create and edit SQLite products and storefront receives active
   assert.ok(!(await afterHide.json()).products.some((entry) => entry.id === product.id))
 })
 
+test('checkout uses admin-configured payments, calculates prices on the server, and stores private orders', async () => {
+  const login = await fetch(`${origin}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ username: 'ShahzaibKS', password: 'a-manager-password' }),
+  })
+  const adminCookie = login.headers.get('set-cookie').split(';')[0]
+  const unauthenticatedSettings = await fetch(`${origin}/api/admin/payment-methods`)
+  assert.equal(unauthenticatedSettings.status, 401)
+
+  const product = {
+    id: 'checkout-test-design',
+    name: 'Checkout Test Design',
+    detail: 'Test checkout product',
+    price: 12000,
+    category: 'Daily Wear',
+    image: 'https://example.com/checkout.jpg',
+    fabric: 'Cotton',
+    stitching: 'Test stitch',
+    colorways: [{ name: 'Ivory', hex: '#e9e1d2' }],
+    active: true,
+  }
+  const savedProduct = await fetch(`${origin}/api/admin/products`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ product }),
+  })
+  assert.equal(savedProduct.status, 200)
+
+  const methods = [
+    { id: 'card', enabled: true, instructions: '', checkoutUrl: 'https://payments.example/checkout?amount={amount}&order={order_number}' },
+    { id: 'bank_transfer', enabled: false, instructions: '', accountName: '', accountNumber: '', iban: '' },
+    { id: 'easypaisa', enabled: false, instructions: '', accountName: '', accountNumber: '' },
+    { id: 'jazzcash', enabled: false, instructions: '', accountName: '', accountNumber: '' },
+  ]
+  const saveMethods = await fetch(`${origin}/api/admin/payment-methods`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ methods }),
+  })
+  assert.equal(saveMethods.status, 200)
+  assert.deepEqual((await (await fetch(`${origin}/api/payment-methods`)).json()).methods.map(({ id }) => id), ['card'])
+
+  const createOrder = await fetch(`${origin}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({
+      customer: {
+        name: 'Checkout Customer',
+        email: 'checkout@example.com',
+        phone: '+92 300 1234567',
+        address: '12 Test Street, Model Town',
+        city: 'Lahore',
+        province: 'Punjab',
+        postalCode: '54000',
+        notes: '',
+      },
+      paymentMethod: 'card',
+      items: [{ productId: product.id, color: 'Ivory', size: 'M', quantity: 2 }],
+    }),
+  })
+  assert.equal(createOrder.status, 201)
+  const { order } = await createOrder.json()
+  assert.equal(order.subtotal, 24000)
+  assert.equal(order.status, 'awaiting_payment')
+  assert.equal(order.paymentStatus, 'awaiting_payment')
+  const hostedUrl = new URL(order.paymentDetails.checkoutUrl)
+  assert.equal(hostedUrl.searchParams.get('amount'), '24000')
+  assert.equal(hostedUrl.searchParams.get('order'), order.orderNumber)
+
+  const publicOrderResponse = await fetch(`${origin}/api/orders/${order.id}`)
+  assert.equal(publicOrderResponse.status, 200)
+  const publicOrder = (await publicOrderResponse.json()).order
+  assert.equal(publicOrder.orderNumber, order.orderNumber)
+  assert.equal(publicOrder.address, undefined)
+  assert.equal(publicOrder.email, undefined)
+
+  const adminOrders = await fetch(`${origin}/api/admin/orders`, { headers: { Cookie: adminCookie } })
+  assert.equal(adminOrders.status, 200)
+  const storedOrder = (await adminOrders.json()).orders.find((entry) => entry.id === order.id)
+  assert.equal(storedOrder.email, 'checkout@example.com')
+  assert.equal(storedOrder.address, '12 Test Street, Model Town')
+
+  const updateOrder = await fetch(`${origin}/api/admin/orders/${order.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ status: 'processing' }),
+  })
+  assert.equal(updateOrder.status, 200)
+  const updated = (await updateOrder.json()).order
+  assert.equal(updated.status, 'processing')
+  assert.equal(updated.paymentStatus, 'paid')
+})
+
 test('manager login reports missing SQL admin credentials as a setup error', async () => {
   const missingConfigDirectory = mkdtempSync(join(tmpdir(), 'mian-admin-config-test-'))
   const unconfigured = createAccountApp({

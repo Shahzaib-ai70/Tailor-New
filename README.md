@@ -7,11 +7,13 @@ A responsive storefront prototype for Pakistani men's shalwar kameez, built with
 - `/` home and featured designs
 - `/shop` complete catalog with occasion filters
 - `/shop/:productId` individual design details and size selection
+- `/checkout` delivery details, order summary, and available payment methods
+- `/payment/:orderId` order confirmation and payment instructions
 - `/craft` stitching and design approach
 - `/fitting` appointment request form
 - `/account` customer registration and sign-in, backed by the self-hosted account API
 
-The frontend supports English and Urdu. Use the language selector to translate the storefront, account screens, shopping bag, support widget, and admin portal. The selected language is saved in this browser; Urdu switches the layout to right-to-left and uses the Noto Nastaliq Urdu font.
+The frontend supports English and Urdu. Use the language selector to translate the storefront, account screens, shopping bag, checkout, payment instructions, support widget, and admin portal. The selected language is saved in this browser; Urdu switches the layout to right-to-left and uses the Noto Nastaliq Urdu font.
 
 ## Run locally
 
@@ -33,7 +35,9 @@ Node.js 22.5 or newer is required for the built-in SQLite account store.
 
 Open `/admin` and sign in with the manager username and password configured for the account API. Supabase is not required for manager authentication or the customer directory. The account API verifies the manager credentials and stores hashed-token sessions in SQLite; customer registrations are read from the same SQLite database used by `/account`. Password hashes are never returned by the customer-directory API.
 
-Set `ADMIN_USERNAME` and a unique `ADMIN_PASSWORD` of at least 12 characters that is different from the username in the account API environment before starting it. `AUTH_DB_PATH` defaults to `./data/accounts.sqlite`; the database file is excluded from Git, so back it up and keep it on persistent storage. With Supabase unset, the product catalog, customer support conversations, and chat read state are stored in SQLite. The Admin migrates the existing browser catalog into SQLite on first load; subsequent product additions, edits, and visibility changes are shared with the storefront. Signed-in customers see their own account conversation across devices; guest chats use a private browser session. Fitting requests and WhatsApp settings remain browser-local.
+Set `ADMIN_USERNAME` and a unique `ADMIN_PASSWORD` of at least 12 characters that is different from the username in the account API environment before starting it. `AUTH_DB_PATH` defaults to `./data/accounts.sqlite`; the database file is excluded from Git, so back it up and keep it on persistent storage. With Supabase unset, the product catalog, customer support conversations, chat read state, orders, and payment settings are stored in SQLite. The Admin migrates the existing browser catalog into SQLite on first load; subsequent product additions, edits, and visibility changes are shared with the storefront. Signed-in customers see their own account conversation across devices; guest chats use a private browser session. Fitting requests and WhatsApp settings remain browser-local.
+
+The Admin Orders section lists submitted orders and lets managers update order status. In Admin Settings, configure the payment methods customers can choose at checkout. Bank transfer, Easypaisa, and JazzCash show the instructions and account details entered there. Card checkout only redirects to a hosted payment page when a valid HTTPS checkout URL is configured; payment processing and confirmation must be provided by that payment provider.
 
 ### VPS account API deployment
 
@@ -71,6 +75,6 @@ npm run lint
 npm run test:auth
 ```
 
-The catalog contains 50 designs: ten shalwar kameez silhouettes crossed with five stitch treatments (Resha, Kinari, Badla, Shadow Panel, and Gulaab), each with five selectable colors. Each catalog design has a distinct Unsplash stock fashion photo; these are styling references and do not depict the exact design or selected color. Occasion filters, size selection, and the client-side shopping bag carry each selected style and color through to the cart. The home page photography and typefaces load from Unsplash and Google Fonts. Cart contents are in memory only, and checkout/payment processing are not connected.
+The catalog contains 50 designs: ten shalwar kameez silhouettes crossed with five stitch treatments (Resha, Kinari, Badla, Shadow Panel, and Gulaab), each with five selectable colors. Each catalog design has a distinct Unsplash stock fashion photo; these are styling references and do not depict the exact design or selected color. Occasion filters, size selection, and the client-side shopping bag carry each selected style and color through checkout. The server validates order details and calculates prices from the active catalog before saving orders to SQLite. Cart contents are in memory only. Payment instructions are managed by the Admin; a real card payment requires configuring a hosted checkout with a payment provider. The home page photography and typefaces load from Unsplash and Google Fonts.
 
 A source backup is stored in `backups/Mian-Tailor-And-Design-2026-10-22.zip`.
