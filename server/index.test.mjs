@@ -240,7 +240,7 @@ test('manager can create and edit SQLite products and storefront receives active
   assert.ok(!(await afterHide.json()).products.some((entry) => entry.id === product.id))
 })
 
-test('starter catalog import adds missing products without overwriting existing catalog entries', async () => {
+test('starter catalog import preserves edits, adds missing designs, and hides legacy starters without deleting them', async () => {
   const login = await fetch(`${origin}/api/admin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: origin },
@@ -259,31 +259,46 @@ test('starter catalog import adds missing products without overwriting existing 
     colorways: [{ name: 'White', hex: '#f4f1e8' }],
     active: false,
   }
+  const legacyStarter = { ...existing, id: 'mehran-straight-cut-resha', name: 'Manager-edited legacy design', active: true }
   const imported = { ...existing, id: 'pakistani-import-design', name: 'Pakistani Starter Design', active: true }
-  const saveExisting = await fetch(`${origin}/api/admin/products`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
-    body: JSON.stringify({ product: existing }),
-  })
-  assert.equal(saveExisting.status, 200)
+  for (const product of [existing, legacyStarter]) {
+    const saveExisting = await fetch(`${origin}/api/admin/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+      body: JSON.stringify({ product }),
+    })
+    assert.equal(saveExisting.status, 200)
+  }
 
-  const importCatalog = async (products) => fetch(`${origin}/api/admin/products/seed`, {
+  const importCatalog = async (products, deactivateIds) => fetch(`${origin}/api/admin/products/seed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
-    body: JSON.stringify({ products }),
+    body: JSON.stringify({ products, deactivateIds }),
   })
-  const firstImport = await importCatalog([existing, imported])
+  const firstImport = await importCatalog([legacyStarter, existing, imported], [legacyStarter.id])
   assert.equal(firstImport.status, 201)
-  assert.equal((await firstImport.json()).addedCount, 1)
+  assert.deepEqual(
+    (({ addedCount, deactivatedCount }) => ({ addedCount, deactivatedCount }))(await firstImport.json()),
+    { addedCount: 1, deactivatedCount: 1 },
+  )
 
-  const repeatImport = await importCatalog([{ ...existing, name: 'Must not overwrite manager edits' }, { ...imported, name: 'Must remain original' }])
+  const repeatImport = await importCatalog([
+    { ...legacyStarter, name: 'Must not overwrite manager edits' },
+    { ...existing, name: 'Must not overwrite manager edits' },
+    { ...imported, name: 'Must remain original' },
+  ], [legacyStarter.id])
   assert.equal(repeatImport.status, 200)
-  assert.equal((await repeatImport.json()).addedCount, 0)
+  assert.deepEqual(
+    (({ addedCount, deactivatedCount }) => ({ addedCount, deactivatedCount }))(await repeatImport.json()),
+    { addedCount: 0, deactivatedCount: 0 },
+  )
 
   const catalog = await fetch(`${origin}/api/admin/products`, { headers: { Cookie: adminCookie } })
   const savedProducts = (await catalog.json()).products
   assert.equal(savedProducts.find((product) => product.id === existing.id).name, existing.name)
   assert.equal(savedProducts.find((product) => product.id === existing.id).active, false)
+  assert.equal(savedProducts.find((product) => product.id === legacyStarter.id).name, legacyStarter.name)
+  assert.equal(savedProducts.find((product) => product.id === legacyStarter.id).active, false)
   assert.equal(savedProducts.find((product) => product.id === imported.id).name, imported.name)
 })
 

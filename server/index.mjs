@@ -394,6 +394,7 @@ export function createAccountApp({
       updated_at = excluded.updated_at
   `)
   const insertProductIfMissing = database.prepare(`${productInsert} ON CONFLICT(id) DO NOTHING`)
+  const hideActiveProduct = database.prepare('UPDATE catalog_products SET active = 0, updated_at = ? WHERE id = ? AND active = 1')
 
   function productValues(product) {
     return [
@@ -986,6 +987,13 @@ export function createAccountApp({
       response.status(400).json({ error: 'Provide between 1 and 1000 valid catalog products.' })
       return
     }
+    const deactivateIds = request.body?.deactivateIds ?? []
+    if (!Array.isArray(deactivateIds) || deactivateIds.length > 100
+      || deactivateIds.some((id) => typeof id !== 'string' || !/^[a-z0-9-]{1,120}$/.test(id))
+      || new Set(deactivateIds).size !== deactivateIds.length) {
+      response.status(400).json({ error: 'The starter archive list contains invalid or duplicate product IDs.' })
+      return
+    }
     const validated = incoming.map(validateProduct)
     if (validated.some((product) => !product)
       || new Set(validated.map((product) => product.id)).size !== validated.length) {
@@ -994,17 +1002,21 @@ export function createAccountApp({
     }
     database.exec('BEGIN')
     let addedCount = 0
+    let deactivatedCount = 0
     try {
-    for (const product of validated) {
-      addedCount += insertProductIfMissing.run(...productValues(product)).changes
-    }
-    database.exec('COMMIT')
+      for (const product of validated) {
+        addedCount += insertProductIfMissing.run(...productValues(product)).changes
+      }
+      for (const id of deactivateIds) {
+        deactivatedCount += hideActiveProduct.run(new Date().toISOString(), id).changes
+      }
+      database.exec('COMMIT')
     } catch (error) {
-    database.exec('ROLLBACK')
-    throw error
+      database.exec('ROLLBACK')
+      throw error
     }
     const products = database.prepare('SELECT * FROM catalog_products ORDER BY name').all()
-    response.status(addedCount > 0 ? 201 : 200).json({ products: products.map(serializeProduct), addedCount })
+    response.status(addedCount > 0 || deactivatedCount > 0 ? 201 : 200).json({ products: products.map(serializeProduct), addedCount, deactivatedCount })
   })
 
   app.post('/api/admin/products', allowSameOrigin, (request, response) => {

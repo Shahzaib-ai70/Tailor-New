@@ -52,6 +52,19 @@ const stitchTreatments = [
   { id: 'gulaab', name: 'Gulaab Motif', detail: 'small floral motifs hand-finished at the cuff', price: 1900 },
 ]
 
+const legacyStarterProductIds = [
+  'mehran-straight-cut',
+  'safa-summer-cotton',
+  'noor-band-collar',
+  'neel-threadwork',
+  'gul-mehndi-cuff',
+  'jashn-panel-kameez',
+  'zari-waistcoat',
+  'riwayat-prince-coat',
+  'siyah-pathani',
+  'dastoor-classic-shalwar',
+].flatMap((designId) => ['resha', 'kinari', 'badla', 'shadow', 'gulaab'].map((treatmentId) => `${designId}-${treatmentId}`))
+
 const productPhotos = [
   'photo-1711216612464-3fde510fa50f',
   'photo-1710956446132-832273cd344d',
@@ -479,7 +492,7 @@ function App() {
     saveCart([])
   }
 
-  if (location.pathname.startsWith('/admin')) return <AdminPage starterProducts={products} />
+  if (location.pathname.startsWith('/admin')) return <AdminPage starterProducts={products} legacyStarterProductIds={legacyStarterProductIds} />
 
   return (
     <div className="storefront">

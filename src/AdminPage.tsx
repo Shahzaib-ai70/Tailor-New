@@ -17,7 +17,7 @@ type AccountDirectoryCustomer = { id: number; fullName: string; email: string; c
 type AccountDirectoryResponse = { customers?: AccountDirectoryCustomer[]; error?: string }
 type AdminSessionResponse = { user?: LocalAdminUser | null; error?: string }
 type AdminSupportResponse = { conversations?: SupportConversation[]; messages?: SupportMessage[]; error?: string }
-type AdminProductsResponse = { products?: Product[]; product?: Product; addedCount?: number; error?: string }
+type AdminProductsResponse = { products?: Product[]; product?: Product; addedCount?: number; deactivatedCount?: number; error?: string }
 type AdminOrdersResponse = { orders?: StoreOrder[]; order?: StoreOrder; error?: string }
 type AdminPaymentMethodsResponse = { methods?: PaymentMethod[]; error?: string }
 type AdminStoreContactResponse = { contact?: StoreContact; error?: string }
@@ -119,7 +119,7 @@ function draftFromProduct(product: Product): ProductDraft {
   }
 }
 
-export default function AdminPage({ starterProducts }: { starterProducts: Product[] }) {
+export default function AdminPage({ starterProducts, legacyStarterProductIds }: { starterProducts: Product[]; legacyStarterProductIds: string[] }) {
   const localMode = !isSupabaseConfigured || !supabase
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedSection = searchParams.get('section')
@@ -642,13 +642,13 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         const response = await fetch('/api/admin/products/seed', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ products: starterProducts }),
+          body: JSON.stringify({ products: starterProducts, deactivateIds: legacyStarterProductIds }),
         })
         const result = await readApiResponse<AdminProductsResponse>(response)
         if (!response.ok) throw new Error(result.error ?? 'Could not import Pakistani starter designs.')
         const loadedProducts = result.products ?? []
         setProducts(loadedProducts)
-        setNotice(`${result.addedCount ?? 0} new Pakistani designs added. Existing products and edits were preserved.`)
+        setNotice(`${result.addedCount ?? 0} Pakistani designs added; ${result.deactivatedCount ?? 0} previous starter listings hidden. No products or edits were deleted.`)
         return
       }
       if (!supabase) return
@@ -660,7 +660,17 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         setError(seedError.message)
         return
       }
-      setNotice(`${importedProducts?.length ?? 0} new Pakistani designs added. Existing products and edits were preserved.`)
+      const { data: deactivatedProducts, error: deactivateError } = await supabase.from('products')
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .in('id', legacyStarterProductIds)
+        .eq('active', true)
+        .select('id')
+      if (deactivateError) {
+        setError(`Pakistani designs were added, but previous starter listings could not be hidden: ${deactivateError.message}`)
+        await refreshData()
+        return
+      }
+      setNotice(`${importedProducts?.length ?? 0} Pakistani designs added; ${deactivatedProducts?.length ?? 0} previous starter listings hidden. No products or edits were deleted.`)
       await refreshData()
     } catch (seedError) {
       setError(seedError instanceof Error ? seedError.message : 'Could not import Pakistani starter designs.')
@@ -952,7 +962,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               <article><span className="admin-stat-icon"><Headset size={18} /></span><p>Live support</p><strong>{conversations.filter((item) => item.status === 'open').length}</strong><small>{supportMessages.length} messages across all chats</small></article>
               <article><span className="admin-stat-icon"><ShoppingBag size={18} /></span><p>Collection value</p><strong>{money.format(products.filter((product) => product.active !== false).reduce((total, product) => total + product.price, 0))}</strong><small>Combined price of active designs</small></article>
             </div>
-            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Start with 100 Pakistani designs</h2><p>Import the original Pakistani shalwar kameez collection {localMode ? 'into this browser' : 'into Supabase'} so you can edit the listings here.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
+            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Start with 100 Pakistani designs</h2><p>Import the original Pakistani shalwar kameez collection {localMode ? 'into this browser' : 'into Supabase'} so you can edit the listings here. The old starter listings will be hidden, not deleted.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
             <div className="admin-panel">
               <div className="admin-panel-heading"><div><p className="admin-kicker">Latest activity</p><h2>Recent fitting requests</h2></div><button className="admin-text-button" type="button" onClick={() => navigateSection('fittings')}>View all <ArrowLeft size={14} /></button></div>
               {requests.length === 0 ? <p className="admin-empty">New fitting requests will appear here.</p> : <div className="admin-request-list">{requests.slice(0, 5).map((request) => <article key={request.id}><div><strong>{request.name}</strong><span>{request.occasion} · {formatAdminDate(request.created_at)}</span></div><span className={`admin-status ${request.status}`}>{request.status}</span></article>)}</div>}
@@ -962,9 +972,10 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
 
         {section === 'products' && (
           <section className="admin-content">
-            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Your product list is empty</h2><p>Import the 100 Pakistani designs or add a product manually.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
+            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Your product list is empty</h2><p>Import the 100 Pakistani designs or add a product manually. Previous starter listings will be hidden, not deleted.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
             <div className="admin-panel">
-              <div className="admin-panel-heading"><div><p className="admin-kicker">Catalog</p><h2>{products.length} products</h2></div><div className="admin-row-actions"><button className="admin-secondary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Add 100 Pakistani designs'}</button><button className="admin-primary-button admin-add-button" type="button" onClick={startNewProduct}><Plus size={16} /> Add product</button></div></div>
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Catalog</p><h2>{products.length} products</h2></div><div className="admin-row-actions"><button className="admin-secondary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving} title="Add missing designs and hide only the previous 50 starter listings.">{saving ? 'Importing…' : 'Add 100 Pakistani designs'}</button><button className="admin-primary-button admin-add-button" type="button" onClick={startNewProduct}><Plus size={16} /> Add product</button></div></div>
+              <p className="admin-empty">Import adds missing Pakistani designs and hides the 50 previous starter listings. Those entries and their edits are retained and can be republished.</p>
               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Visibility</th><th>Actions</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}><td><div className="admin-product-cell"><img src={product.image} alt="" /><span><strong>{product.name}</strong><small>{product.id}</small></span></div></td><td>{product.category}</td><td>{money.format(product.price)}</td><td><span className={product.active === false ? 'admin-status inactive' : 'admin-status active'}>{product.active === false ? 'Hidden' : 'Active'}</span></td><td><div className="admin-row-actions"><button className="admin-small-button" type="button" onClick={() => startEditProduct(product)}>Edit</button><button className="admin-small-button" type="button" onClick={() => void toggleProduct(product)}>{product.active === false ? 'Publish' : 'Hide'}</button></div></td></tr>)}</tbody></table></div>
             </div>
             {editorOpen && <div className="admin-product-modal" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditorOpen(false) }}>
