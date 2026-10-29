@@ -113,6 +113,45 @@ if (productPhotos.length !== 50 || new Set(productPhotos).size !== 50 || product
 const categories = ['All collections', 'Daily Wear', 'Eid & Festive', 'Wedding Guest', 'Waistcoat Sets', 'Pathani']
 const sizes = ['S', 'M', 'L', 'XL', 'XXL']
 const money = new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', maximumFractionDigits: 0 })
+const cartStorageKey = 'mian-shopping-bag-v1'
+
+function isStoredCartLine(value: unknown): value is CartLine {
+  if (!value || typeof value !== 'object') return false
+  const line = value as Partial<CartLine>
+  const product = line.product
+  const colorway = line.colorway
+  return Boolean(
+    product && typeof product === 'object'
+    && typeof product.id === 'string'
+    && typeof product.name === 'string'
+    && typeof product.detail === 'string'
+    && typeof product.price === 'number' && Number.isFinite(product.price) && product.price >= 0
+    && typeof product.category === 'string'
+    && typeof product.image === 'string'
+    && typeof product.fabric === 'string'
+    && typeof product.stitching === 'string'
+    && Array.isArray(product.colorways)
+    && colorway && typeof colorway === 'object'
+    && typeof colorway.name === 'string'
+    && typeof colorway.hex === 'string'
+    && sizes.includes(line.size ?? '')
+    && Number.isInteger(line.quantity) && (line.quantity ?? 0) > 0 && (line.quantity ?? 0) <= 10,
+  )
+}
+
+function readStoredCart(): { cart: CartLine[]; error: string } {
+  try {
+    const stored = window.localStorage.getItem(cartStorageKey)
+    if (!stored) return { cart: [], error: '' }
+    const parsed: unknown = JSON.parse(stored)
+    if (!Array.isArray(parsed) || !parsed.every(isStoredCartLine)) {
+      return { cart: [], error: 'Your saved bag could not be read and has been cleared.' }
+    }
+    return { cart: parsed, error: '' }
+  } catch {
+    return { cart: [], error: 'Your saved bag could not be read. Check your browser storage settings.' }
+  }
+}
 
 function ProductCard({ product, onAdd }: { product: Product; onAdd: (product: Product, colorway: Colorway, size: string) => void }) {
   const { t } = useLocale()
@@ -289,11 +328,23 @@ function App() {
   const navigate = useNavigate()
   const [catalog, setCatalog] = useState<Product[]>(products)
   const [catalogLoadError, setCatalogLoadError] = useState('')
-  const [cart, setCart] = useState<CartLine[]>([])
+  const [initialCart] = useState(readStoredCart)
+  const [cart, setCart] = useState<CartLine[]>(initialCart.cart)
+  const [cartStorageError, setCartStorageError] = useState(initialCart.error)
   const [cartOpen, setCartOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const itemCount = cart.reduce((total, line) => total + line.quantity, 0)
   const subtotal = cart.reduce((total, line) => total + line.product.price * line.quantity, 0)
+
+  function saveCart(nextCart: CartLine[]) {
+    setCart(nextCart)
+    try {
+      window.localStorage.setItem(cartStorageKey, JSON.stringify(nextCart))
+      setCartStorageError('')
+    } catch {
+      setCartStorageError('Your bag could not be saved. Check your browser storage settings.')
+    }
+  }
 
   useEffect(() => {
     if (!supabase) {
@@ -344,17 +395,23 @@ function App() {
   }, [])
 
   function addToCart(product: Product, colorway: Colorway, size: string) {
-    setCart((current) => {
-      const existingLine = current.find((line) => line.product.id === product.id && line.colorway.name === colorway.name && line.size === size)
-      if (existingLine) return current.map((line) => line === existingLine ? { ...line, quantity: line.quantity + 1 } : line)
-      return [...current, { product, colorway, size, quantity: 1 }]
-    })
+    const existingLine = cart.find((line) => line.product.id === product.id && line.colorway.name === colorway.name && line.size === size)
+    if (existingLine && existingLine.quantity >= 10) return
+    if (existingLine) {
+      saveCart(cart.map((line) => line === existingLine ? { ...line, quantity: line.quantity + 1 } : line))
+      return
+    }
+    saveCart([...cart, { product, colorway, size, quantity: 1 }])
   }
 
   function updateQuantity(productId: string, colorName: string, size: string, amount: number) {
-    setCart((current) => current.map((line) => line.product.id === productId && line.colorway.name === colorName && line.size === size
-      ? { ...line, quantity: line.quantity + amount }
+    saveCart(cart.map((line) => line.product.id === productId && line.colorway.name === colorName && line.size === size
+      ? { ...line, quantity: Math.min(10, line.quantity + amount) }
       : line).filter((line) => line.quantity > 0))
+  }
+
+  function clearCart() {
+    saveCart([])
   }
 
   if (location.pathname.startsWith('/admin')) return <AdminPage starterProducts={products} />
@@ -362,7 +419,7 @@ function App() {
   return (
     <div className="storefront">
       <header className="site-header"><Link className="wordmark" to="/" aria-label={t('Mian Tailor And Design home')}><span className="wordmark-mark" aria-hidden="true"><span>M</span><i /></span><span className="wordmark-name">MIAN <i>TAILOR AND DESIGN</i></span></Link><button className="mobile-menu-toggle" type="button" onClick={() => setMenuOpen((open) => !open)} aria-label={t(menuOpen ? 'Close navigation' : 'Open navigation')}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'} aria-label={t('Main navigation')}><NavLink to="/" end onClick={() => setMenuOpen(false)}>{t('Home')}</NavLink><NavLink to="/shop" onClick={() => setMenuOpen(false)}>{t('Shop')}</NavLink><NavLink to="/craft" onClick={() => setMenuOpen(false)}>{t('Our craft')}</NavLink><NavLink to="/fitting" onClick={() => setMenuOpen(false)}>{t('Book a fitting')}</NavLink></nav><div className="header-actions"><LanguageSwitcher /><Link className="account-link" to="/account" aria-label={t('Sign in or register')}><UserRound size={17} strokeWidth={1.6} /><span>{t('Account')}</span></Link><button className="bag-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t('Open shopping bag, ')}${itemCount}${t(' items')}`}><ShoppingBag size={18} strokeWidth={1.6} /><span>{t('Bag')}</span><span className="bag-count">{itemCount}</span></button></div></header>
-      <main>{catalogLoadError && <p className="catalog-error" role="alert">{t('Could not load the latest collection: ')}{catalogLoadError}</p>}<Routes><Route path="/" element={<HomePage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop" element={<ShopPage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop/:productId" element={<ProductPage catalog={catalog} onAdd={addToCart} />} /><Route path="/craft" element={<CraftPage />} /><Route path="/fitting" element={<FittingPage />} /><Route path="/account" element={<AccountPage />} /><Route path="/checkout" element={<CheckoutPage cart={cart} subtotal={subtotal} onOrderPlaced={() => setCart([])} />} /><Route path="/payment/:orderId" element={<PaymentPage />} /><Route path="*" element={<NotFoundPage />} /></Routes></main>
+      <main>{catalogLoadError && <p className="catalog-error" role="alert">{t('Could not load the latest collection: ')}{catalogLoadError}</p>}{cartStorageError && <p className="catalog-error" role="alert">{t(cartStorageError)}</p>}<Routes><Route path="/" element={<HomePage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop" element={<ShopPage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop/:productId" element={<ProductPage catalog={catalog} onAdd={addToCart} />} /><Route path="/craft" element={<CraftPage />} /><Route path="/fitting" element={<FittingPage />} /><Route path="/account" element={<AccountPage />} /><Route path="/checkout" element={<CheckoutPage cart={cart} subtotal={subtotal} onOrderPlaced={clearCart} />} /><Route path="/payment/:orderId" element={<PaymentPage />} /><Route path="*" element={<NotFoundPage />} /></Routes></main>
       <footer className="site-footer"><Link className="footer-brand" to="/">MIAN TAILOR AND DESIGN</Link><span>{t('Pakistani craft. Made to wear.')}</span><span>© 2026 Mian Tailor And Design</span></footer>
       {cartOpen && <div className="cart-layer"><button className="cart-backdrop" type="button" onClick={() => setCartOpen(false)} aria-label={t('Close shopping bag')} /><aside className="cart-drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title"><div className="cart-header"><div><p className="eyebrow">{t('Your selection')}</p><h2 id="cart-title">{t('The bag')} <span>({itemCount})</span></h2></div><button className="icon-button" type="button" onClick={() => setCartOpen(false)} aria-label={t('Close bag')}><X size={21} /></button></div>{cart.length === 0 ? <div className="empty-cart"><ShoppingBag size={28} strokeWidth={1.3} /><p>{t('Your next favorite is waiting.')}</p><Link className="text-link" to="/shop" onClick={() => setCartOpen(false)}>{t('Explore the collection')} <ArrowRight size={15} /></Link></div> : <><div className="cart-items">{cart.map((line) => <div className="cart-line" key={`${line.product.id}-${line.colorway.name}-${line.size}`}><img src={line.product.image} alt="" /><div className="cart-line-info"><h3>{t(line.product.name)}</h3><p>{t(line.colorway.name)} · {t('Size ')}{line.size}</p><div className="quantity-control"><button type="button" onClick={() => updateQuantity(line.product.id, line.colorway.name, line.size, -1)} aria-label={`${t('Remove one ')}${t(line.product.name)}`}><Minus size={13} /></button><span>{line.quantity}</span><button type="button" onClick={() => updateQuantity(line.product.id, line.colorway.name, line.size, 1)} aria-label={`${t('Add one ')}${t(line.product.name)}`}><Plus size={13} /></button></div></div><span className="cart-line-price">{money.format(line.product.price * line.quantity)}</span></div>)}</div><div className="cart-summary"><p><span>{t('Subtotal')}</span><strong>{money.format(subtotal)}</strong></p><span className="shipping-note">{t('Delivery charges are confirmed by customer service.')}</span><button className="checkout-button" type="button" onClick={() => { setCartOpen(false); navigate('/checkout') }}>{t('Continue to checkout')} <ArrowRight size={16} /></button><button className="continue-shopping" type="button" onClick={() => setCartOpen(false)}>{t('Continue shopping')}</button></div></>}</aside></div>}
       <SupportWidget />
