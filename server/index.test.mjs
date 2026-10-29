@@ -240,6 +240,53 @@ test('manager can create and edit SQLite products and storefront receives active
   assert.ok(!(await afterHide.json()).products.some((entry) => entry.id === product.id))
 })
 
+test('starter catalog import adds missing products without overwriting existing catalog entries', async () => {
+  const login = await fetch(`${origin}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ username: 'ShahzaibKS', password: 'a-manager-password' }),
+  })
+  const adminCookie = login.headers.get('set-cookie').split(';')[0]
+  const existing = {
+    id: 'existing-manager-design',
+    name: 'Manager-edited Design',
+    detail: 'Existing custom listing',
+    price: 18000,
+    category: 'Daily Wear',
+    image: 'https://example.com/existing.jpg',
+    fabric: 'Cotton',
+    stitching: 'Custom manager stitching',
+    colorways: [{ name: 'White', hex: '#f4f1e8' }],
+    active: false,
+  }
+  const imported = { ...existing, id: 'pakistani-import-design', name: 'Pakistani Starter Design', active: true }
+  const saveExisting = await fetch(`${origin}/api/admin/products`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ product: existing }),
+  })
+  assert.equal(saveExisting.status, 200)
+
+  const importCatalog = async (products) => fetch(`${origin}/api/admin/products/seed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ products }),
+  })
+  const firstImport = await importCatalog([existing, imported])
+  assert.equal(firstImport.status, 201)
+  assert.equal((await firstImport.json()).addedCount, 1)
+
+  const repeatImport = await importCatalog([{ ...existing, name: 'Must not overwrite manager edits' }, { ...imported, name: 'Must remain original' }])
+  assert.equal(repeatImport.status, 200)
+  assert.equal((await repeatImport.json()).addedCount, 0)
+
+  const catalog = await fetch(`${origin}/api/admin/products`, { headers: { Cookie: adminCookie } })
+  const savedProducts = (await catalog.json()).products
+  assert.equal(savedProducts.find((product) => product.id === existing.id).name, existing.name)
+  assert.equal(savedProducts.find((product) => product.id === existing.id).active, false)
+  assert.equal(savedProducts.find((product) => product.id === imported.id).name, imported.name)
+})
+
 test('checkout uses admin-configured payments, calculates prices on the server, and stores private orders', async () => {
   const login = await fetch(`${origin}/api/admin/login`, {
     method: 'POST',

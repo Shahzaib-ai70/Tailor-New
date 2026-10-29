@@ -374,10 +374,12 @@ export function createAccountApp({
     }
   }
 
-  const saveProduct = database.prepare(`
+  const productInsert = `
     INSERT INTO catalog_products
       (id, name, detail, price, category, image, fabric, stitching, colorways_json, tag, active, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `
+  const saveProduct = database.prepare(`${productInsert}
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       detail = excluded.detail,
@@ -391,9 +393,10 @@ export function createAccountApp({
       active = excluded.active,
       updated_at = excluded.updated_at
   `)
+  const insertProductIfMissing = database.prepare(`${productInsert} ON CONFLICT(id) DO NOTHING`)
 
-  function storeProduct(product) {
-    saveProduct.run(
+  function productValues(product) {
+    return [
       product.id,
       product.name,
       product.detail,
@@ -406,7 +409,11 @@ export function createAccountApp({
       product.tag,
       product.active ? 1 : 0,
       new Date().toISOString(),
-    )
+    ]
+  }
+
+  function storeProduct(product) {
+    saveProduct.run(...productValues(product))
   }
 
   const paymentMethodDefaults = [
@@ -974,10 +981,6 @@ export function createAccountApp({
   })
 
   app.post('/api/admin/products/seed', allowSameOrigin, (request, response) => {
-    if (database.prepare('SELECT COUNT(*) AS count FROM catalog_products').get().count > 0) {
-      response.status(409).json({ error: 'The catalog already contains products.' })
-      return
-    }
     const incoming = request.body?.products
     if (!Array.isArray(incoming) || incoming.length < 1 || incoming.length > 1000) {
       response.status(400).json({ error: 'Provide between 1 and 1000 valid catalog products.' })
@@ -990,15 +993,18 @@ export function createAccountApp({
       return
     }
     database.exec('BEGIN')
+    let addedCount = 0
     try {
-      for (const product of validated) storeProduct(product)
-      database.exec('COMMIT')
+    for (const product of validated) {
+      addedCount += insertProductIfMissing.run(...productValues(product)).changes
+    }
+    database.exec('COMMIT')
     } catch (error) {
-      database.exec('ROLLBACK')
-      throw error
+    database.exec('ROLLBACK')
+    throw error
     }
     const products = database.prepare('SELECT * FROM catalog_products ORDER BY name').all()
-    response.status(201).json({ products: products.map(serializeProduct) })
+    response.status(addedCount > 0 ? 201 : 200).json({ products: products.map(serializeProduct), addedCount })
   })
 
   app.post('/api/admin/products', allowSameOrigin, (request, response) => {

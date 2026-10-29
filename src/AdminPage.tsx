@@ -17,7 +17,7 @@ type AccountDirectoryCustomer = { id: number; fullName: string; email: string; c
 type AccountDirectoryResponse = { customers?: AccountDirectoryCustomer[]; error?: string }
 type AdminSessionResponse = { user?: LocalAdminUser | null; error?: string }
 type AdminSupportResponse = { conversations?: SupportConversation[]; messages?: SupportMessage[]; error?: string }
-type AdminProductsResponse = { products?: Product[]; product?: Product; error?: string }
+type AdminProductsResponse = { products?: Product[]; product?: Product; addedCount?: number; error?: string }
 type AdminOrdersResponse = { orders?: StoreOrder[]; order?: StoreOrder; error?: string }
 type AdminPaymentMethodsResponse = { methods?: PaymentMethod[]; error?: string }
 type AdminStoreContactResponse = { contact?: StoreContact; error?: string }
@@ -45,7 +45,7 @@ const emptyDraft: ProductDraft = {
   fabric: '',
   stitching: '',
   tag: '',
-  colorwaysText: 'Charcoal: #4c4b49\nIvory: #e9e1d2\nIndigo: #3b506f\nDeep Plum: #704254\nBlack: #252321',
+  colorwaysText: 'White: #f4f1e8\nOff White: #e9e1d2\nNavy: #26354b\nOlive: #62664a\nBlack: #252321',
   active: true,
 }
 
@@ -634,7 +634,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     }
   }
 
-  async function publishStarterCatalog() {
+  async function importPakistaniCatalog() {
     setError('')
     setSaving(true)
     try {
@@ -645,25 +645,25 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
           body: JSON.stringify({ products: starterProducts }),
         })
         const result = await readApiResponse<AdminProductsResponse>(response)
-        if (!response.ok) throw new Error(result.error ?? 'Could not load the starter collection.')
+        if (!response.ok) throw new Error(result.error ?? 'Could not import Pakistani starter designs.')
         const loadedProducts = result.products ?? []
         setProducts(loadedProducts)
-        setNotice(`${loadedProducts.length} starter designs loaded into the catalog.`)
+        setNotice(`${result.addedCount ?? 0} new Pakistani designs added. Existing products and edits were preserved.`)
         return
       }
       if (!supabase) return
-      const { error: seedError } = await supabase.from('products').insert(starterProducts.map((product) => ({
+      const { data: importedProducts, error: seedError } = await supabase.from('products').upsert(starterProducts.map((product) => ({
         ...product,
         active: true,
-      })))
+      })), { onConflict: 'id', ignoreDuplicates: true }).select()
       if (seedError) {
         setError(seedError.message)
         return
       }
-      setNotice(`${starterProducts.length} starter designs published.`)
+      setNotice(`${importedProducts?.length ?? 0} new Pakistani designs added. Existing products and edits were preserved.`)
       await refreshData()
     } catch (seedError) {
-      setError(seedError instanceof Error ? seedError.message : 'Could not publish starter designs.')
+      setError(seedError instanceof Error ? seedError.message : 'Could not import Pakistani starter designs.')
     } finally {
       setSaving(false)
     }
@@ -952,7 +952,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
               <article><span className="admin-stat-icon"><Headset size={18} /></span><p>Live support</p><strong>{conversations.filter((item) => item.status === 'open').length}</strong><small>{supportMessages.length} messages across all chats</small></article>
               <article><span className="admin-stat-icon"><ShoppingBag size={18} /></span><p>Collection value</p><strong>{money.format(products.filter((product) => product.active !== false).reduce((total, product) => total + product.price, 0))}</strong><small>Combined price of active designs</small></article>
             </div>
-            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Start with the 50-design collection</h2><p>Load the storefront's starter designs {localMode ? 'into this browser' : 'into Supabase'} so you can edit them here.</p></div><button className="admin-primary-button" type="button" onClick={() => void publishStarterCatalog()} disabled={saving}>{saving ? 'Loading…' : `Load ${starterProducts.length} designs`}</button></div>}
+            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Start with 100 Pakistani designs</h2><p>Import the original Pakistani shalwar kameez collection {localMode ? 'into this browser' : 'into Supabase'} so you can edit the listings here.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
             <div className="admin-panel">
               <div className="admin-panel-heading"><div><p className="admin-kicker">Latest activity</p><h2>Recent fitting requests</h2></div><button className="admin-text-button" type="button" onClick={() => navigateSection('fittings')}>View all <ArrowLeft size={14} /></button></div>
               {requests.length === 0 ? <p className="admin-empty">New fitting requests will appear here.</p> : <div className="admin-request-list">{requests.slice(0, 5).map((request) => <article key={request.id}><div><strong>{request.name}</strong><span>{request.occasion} · {formatAdminDate(request.created_at)}</span></div><span className={`admin-status ${request.status}`}>{request.status}</span></article>)}</div>}
@@ -962,9 +962,9 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
 
         {section === 'products' && (
           <section className="admin-content">
-            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Your product list is empty</h2><p>Load the 50 starter designs or add a product manually.</p></div><button className="admin-primary-button" type="button" onClick={() => void publishStarterCatalog()} disabled={saving}>{saving ? 'Loading…' : 'Load starter collection'}</button></div>}
+            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Your product list is empty</h2><p>Import the 100 Pakistani designs or add a product manually.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
             <div className="admin-panel">
-              <div className="admin-panel-heading"><div><p className="admin-kicker">Catalog</p><h2>{products.length} products</h2></div><button className="admin-primary-button admin-add-button" type="button" onClick={startNewProduct}><Plus size={16} /> Add product</button></div>
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Catalog</p><h2>{products.length} products</h2></div><div className="admin-row-actions"><button className="admin-secondary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Add 100 Pakistani designs'}</button><button className="admin-primary-button admin-add-button" type="button" onClick={startNewProduct}><Plus size={16} /> Add product</button></div></div>
               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Visibility</th><th>Actions</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}><td><div className="admin-product-cell"><img src={product.image} alt="" /><span><strong>{product.name}</strong><small>{product.id}</small></span></div></td><td>{product.category}</td><td>{money.format(product.price)}</td><td><span className={product.active === false ? 'admin-status inactive' : 'admin-status active'}>{product.active === false ? 'Hidden' : 'Active'}</span></td><td><div className="admin-row-actions"><button className="admin-small-button" type="button" onClick={() => startEditProduct(product)}>Edit</button><button className="admin-small-button" type="button" onClick={() => void toggleProduct(product)}>{product.active === false ? 'Publish' : 'Hide'}</button></div></td></tr>)}</tbody></table></div>
             </div>
             {editorOpen && <div className="admin-product-modal" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditorOpen(false) }}>

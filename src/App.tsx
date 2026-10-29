@@ -14,30 +14,40 @@ import { useLocale } from './locale-context'
 import './App.css'
 
 const colorways = [
-  { name: 'Charcoal', hex: '#4c4b49' },
-  { name: 'Ivory', hex: '#e9e1d2' },
-  { name: 'Indigo', hex: '#3b506f' },
-  { name: 'Deep Plum', hex: '#704254' },
+  { name: 'White', hex: '#f4f1e8' },
+  { name: 'Off White', hex: '#e9e1d2' },
+  { name: 'Navy', hex: '#26354b' },
+  { name: 'Olive', hex: '#62664a' },
   { name: 'Black', hex: '#252321' },
 ]
 
 const baseDesigns = [
-  { id: 'mehran-straight-cut', name: 'Mehran Straight Cut', detail: 'Everyday / straight collar', category: 'Daily Wear', price: 8900, fabric: 'Washed cotton', stitching: 'Straight collar, clean placket, side-seam pockets', colorways, tag: 'Bestseller' },
-  { id: 'safa-summer-cotton', name: 'Safa Summer Cotton', detail: 'Everyday / airy relaxed fit', category: 'Daily Wear', price: 8200, fabric: 'Breathable cotton', stitching: 'Soft band collar, tonal buttons, roomy shalwar', colorways },
-  { id: 'noor-band-collar', name: 'Noor Band Collar', detail: 'Everyday / rounded band collar', category: 'Daily Wear', price: 9400, fabric: 'Lightweight cotton', stitching: 'Rounded collar, narrow cuff, relaxed straight cut', colorways },
-  { id: 'neel-threadwork', name: 'Neel Threadwork Placket', detail: 'Eid Edit / contrast threadwork', category: 'Eid & Festive', price: 12900, fabric: 'Textured cotton blend', stitching: 'Contrast piping, shaped cuffs, hand-finished placket', colorways, tag: 'Eid edit' },
-  { id: 'gul-mehndi-cuff', name: 'Gul Mehndi Cuff', detail: 'Eid Edit / embellished cuff', category: 'Eid & Festive', price: 14500, fabric: 'Soft premium cotton', stitching: 'Fine collar detailing, covered buttons, embroidered cuffs', colorways },
-  { id: 'jashn-panel-kameez', name: 'Jashn Panel Kameez', detail: 'Wedding Guest / shaped panels', category: 'Wedding Guest', price: 15900, fabric: 'Premium textured cotton', stitching: 'Panel-front detail, contrast buttons, tailored shoulder', colorways, tag: 'Celebration' },
-  { id: 'zari-waistcoat', name: 'Zari Waistcoat Set', detail: 'Waistcoat / woven layer', category: 'Waistcoat Sets', price: 18900, fabric: 'Cotton kameez, woven waistcoat', stitching: 'Layered waistcoat, refined buttons, precise shoulder line', colorways, tag: 'Two-piece' },
-  { id: 'riwayat-prince-coat', name: 'Riwayat Prince Coat', detail: 'Waistcoat / formal layered set', category: 'Waistcoat Sets', price: 21900, fabric: 'Premium cotton with woven vest', stitching: 'Structured vest, statement buttons, clean kameez front', colorways },
-  { id: 'siyah-pathani', name: 'Siyah Pathani Suit', detail: 'Pathani / relaxed silhouette', category: 'Pathani', price: 9900, fabric: 'Cotton dobby', stitching: 'Wide band collar, concealed placket, tapered shalwar', colorways },
-  { id: 'dastoor-classic-shalwar', name: 'Dastoor Classic Shalwar', detail: 'Wedding Guest / traditional drape', category: 'Wedding Guest', price: 11900, fabric: 'Cotton-linen blend', stitching: 'Classic long hem, hand-finished collar, full-cut shalwar', colorways },
+  { id: 'pak-lahore-cotton', name: 'Lahore Everyday Cotton', detail: 'Daily Wear / classic shalwar kameez', category: 'Daily Wear', price: 8900, fabric: 'Washed cotton', stitching: 'Straight-cut kameez, clean band collar, side-seam pockets and comfortable shalwar', colorways, tag: 'Everyday' },
+  { id: 'pak-karachi-cambric', name: 'Karachi Summer Cambric', detail: 'Daily Wear / lightweight summer set', category: 'Daily Wear', price: 8200, fabric: 'Breathable cotton cambric', stitching: 'Lightweight straight kameez, button placket and airy traditional shalwar', colorways },
+  { id: 'pak-faisalabad-dobby', name: 'Faisalabad Dobby Classic', detail: 'Daily Wear / subtle woven texture', category: 'Daily Wear', price: 9400, fabric: 'Cotton dobby', stitching: 'Textured fabric, regular-fit kameez, narrow cuff and neat collar stand', colorways },
+  { id: 'pak-peshawar-straight', name: 'Peshawar Straight Shalwar', detail: 'Daily Wear / roomy traditional fit', category: 'Daily Wear', price: 9900, fabric: 'Soft blended cotton', stitching: 'Easy shoulder, straight hem, full-cut kameez and roomier shalwar', colorways },
+  { id: 'pak-sialkot-easycare', name: 'Sialkot Easy-Care Suit', detail: 'Daily Wear / practical wash-and-wear', category: 'Daily Wear', price: 9500, fabric: 'Easy-care blended fabric', stitching: 'Regular-fit kameez, reinforced side seams and everyday button cuff', colorways },
+  { id: 'pak-multan-texture', name: 'Multan Textured Cotton', detail: 'Daily Wear / dobby weave', category: 'Daily Wear', price: 10300, fabric: 'Textured cotton dobby', stitching: 'Low-profile collar, straight placket and clean-finished trouser hem', colorways },
+  { id: 'pak-islamabad-classic', name: 'Islamabad Classic Cut', detail: 'Daily Wear / tailored regular fit', category: 'Daily Wear', price: 10800, fabric: 'Cotton blend', stitching: 'Balanced shoulder, straight kameez panels and tailored shalwar waist', colorways },
+  { id: 'pak-white-friday', name: 'White Friday Shalwar Kameez', detail: 'Daily Wear / understated white set', category: 'Daily Wear', price: 9000, fabric: 'Soft cotton', stitching: 'Plain front, traditional collar, discreet pockets and relaxed shalwar', colorways },
+  { id: 'pak-rawalpindi-collar', name: 'Rawalpindi Band Collar', detail: 'Daily Wear / clean band collar', category: 'Daily Wear', price: 9700, fabric: 'Cotton dobby', stitching: 'Standing band collar, centered button placket and straight cuffs', colorways },
+  { id: 'pak-summer-lawn', name: 'Naram Summer Cotton Set', detail: 'Daily Wear / breathable warm-weather cut', category: 'Daily Wear', price: 8500, fabric: 'Lightweight cotton', stitching: 'Loose short-sleeve option, light construction and easy-fit shalwar', colorways },
+  { id: 'pak-peshawari-pathani', name: 'Peshawari Pathani Cut', detail: 'Pathani / relaxed two-pocket silhouette', category: 'Pathani', price: 10500, fabric: 'Cotton dobby', stitching: 'Wide band collar, distinctive chest pockets, straight hem and relaxed shalwar', colorways, tag: 'Pathani' },
+  { id: 'pak-classic-kurta-pajama', name: 'Classic Kurta Pajama', detail: 'Daily Wear / versatile kurta set', category: 'Daily Wear', price: 9200, fabric: 'Cotton blend', stitching: 'Knee-length straight kurta, neat collar stand and matching pajama', colorways },
+  { id: 'pak-eid-moonlight', name: 'Eid Moonlight Cotton', detail: 'Eid & Festive / refined band collar', category: 'Eid & Festive', price: 12900, fabric: 'Premium cotton', stitching: 'Tailored shoulder, concealed top button and neatly shaped cuffs', colorways, tag: 'Eid edit' },
+  { id: 'pak-chaand-raat', name: 'Chaand Raat Dobby Kurta', detail: 'Eid & Festive / subtle woven detail', category: 'Eid & Festive', price: 13900, fabric: 'Premium dobby cotton', stitching: 'Low-contrast woven texture, clean placket and slim button cuff', colorways },
+  { id: 'pak-eid-embroidered', name: 'Eid Resham Kameez', detail: 'Eid & Festive / restrained threadwork', category: 'Eid & Festive', price: 14900, fabric: 'Soft premium cotton', stitching: 'Small tonal thread accents at the collar, placket and cuff', colorways },
+  { id: 'pak-wedding-rawsilk', name: 'Raw Silk Wedding Guest', detail: 'Wedding Guest / formal kurta pajama', category: 'Wedding Guest', price: 18900, fabric: 'Cotton-silk blend', stitching: 'Structured shoulder, dress collar, clean front and formal pajama', colorways, tag: 'Formal' },
+  { id: 'pak-karandi-winter', name: 'Karandi Winter Shalwar Kameez', detail: 'Daily Wear / cool-weather weight', category: 'Daily Wear', price: 13900, fabric: 'Karandi blend', stitching: 'Warm regular-fit kameez, full sleeves and comfortable winter shalwar', colorways },
+  { id: 'pak-khaddar-winter', name: 'Khaddar Winter Classic', detail: 'Daily Wear / textured winter set', category: 'Daily Wear', price: 14500, fabric: 'Cotton khaddar', stitching: 'Textured straight kameez, reinforced seams and full-length sleeves', colorways },
+  { id: 'pak-waistcoat-dobby', name: 'Dobby Waistcoat Set', detail: 'Waistcoat Sets / kameez with woven layer', category: 'Waistcoat Sets', price: 19900, fabric: 'Cotton kameez with woven waistcoat', stitching: 'Matching waistcoat, clean armholes and coordinated button front', colorways, tag: 'Two-piece' },
+  { id: 'pak-formal-waistcoat', name: 'Formal Waistcoat Shalwar Set', detail: 'Waistcoat Sets / occasion-ready layer', category: 'Waistcoat Sets', price: 21900, fabric: 'Premium cotton with textured waistcoat', stitching: 'Tailored waistcoat over a plain kameez with traditional shalwar', colorways },
 ]
 
 const stitchTreatments = [
   { id: 'resha', name: 'Resha Stitch', detail: 'fine tonal resha embroidery', price: 0 },
   { id: 'kinari', name: 'Kinari Edge', detail: 'contrast kinari edging on collar and cuffs', price: 900 },
-  { id: 'badla', name: 'Badla Placket', detail: 'badla-inspired metallic thread along the placket', price: 1600 },
+  { id: 'tilla', name: 'Tilla Placket', detail: 'subtle tilla thread detail along the placket', price: 1600 },
   { id: 'shadow', name: 'Shadow Panel', detail: 'tonal shadow panels with double topstitching', price: 1200 },
   { id: 'gulaab', name: 'Gulaab Motif', detail: 'small floral motifs hand-finished at the cuff', price: 1900 },
 ]
@@ -102,12 +112,12 @@ const products: Product[] = stitchTreatments.flatMap((treatment, treatmentIndex)
   detail: `${design.category} / ${treatment.name}`,
   price: design.price + treatment.price,
   stitching: `${design.stitching}; ${treatment.detail}`,
-  image: productPhotos[treatmentIndex * baseDesigns.length + designIndex],
+  image: productPhotos[(treatmentIndex * baseDesigns.length + designIndex) % productPhotos.length],
   tag: treatmentIndex === 0 ? design.tag : undefined,
 })))
 
-if (productPhotos.length !== 50 || new Set(productPhotos).size !== 50 || products.length !== 50 || new Set(products.map((product) => product.id)).size !== 50 || new Set(products.map((product) => product.image)).size !== 50) {
-  throw new Error('The product catalog must contain 50 uniquely named designs with unique photos.')
+if (productPhotos.length !== 50 || new Set(productPhotos).size !== 50 || products.length !== 100 || new Set(products.map((product) => product.id)).size !== 100) {
+  throw new Error('The Pakistani starter catalog must contain 100 uniquely named designs and 50 stock reference photos.')
 }
 
 const categories = ['All collections', 'Daily Wear', 'Eid & Festive', 'Wedding Guest', 'Waistcoat Sets', 'Pathani']
@@ -187,11 +197,11 @@ function HomePage({ catalog, onAdd }: { catalog: Product[]; onAdd: (product: Pro
     <>
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" /> {t('Made with our roots in mind')}</p><h1 id="hero-title">{t('Tradition,')}<br /><em>{t('stitched your way.')}</em></h1><p className="hero-description">{t('Pakistani shalwar kameez, cut for today. Thoughtful fabrics, distinctive stitching, and room to move through every moment.')}</p><Link className="button button-dark" to="/shop">{t('Explore the collection')} <ArrowUpRight size={16} /></Link><div className="hero-footnote"><span>{t('PAKISTANI CRAFT')}</span><span>{t('Designed with care')} <i /> {t('Made to wear')}</span></div></div>
-        <div className="hero-image" role="img" aria-label={t('Man wearing a charcoal Pakistani shalwar kameez')}><div className="image-note"><span>{t('THE EVERYDAY EDIT')}</span><span>01 / 50 {t('DESIGNS')}</span></div><div className="hero-caption"><span>{t('Easy in every detail.')}</span><ArrowDown size={17} /></div></div>
+        <div className="hero-image" role="img" aria-label={t('Man wearing a charcoal Pakistani shalwar kameez')}><div className="image-note"><span>{t('THE EVERYDAY EDIT')}</span><span>01 / 100 {t('DESIGNS')}</span></div><div className="hero-caption"><span>{t('Easy in every detail.')}</span><ArrowDown size={17} /></div></div>
         <div className="hero-side-label">{t('SHALWAR KAMEEZ · MADE WITH INTENTION')}</div>
       </section>
       <section className="trust-strip" aria-label={t('Our promise')}><span>{t('Pakistani design sensibility')}</span><i /><span>{t('Comfort-first cottons')}</span><i /><span>{t('Careful finishing')}</span><i /><span>{t('Made for your moments')}</span></section>
-      <section className="featured section-wrap"><div className="section-heading"><div><p className="eyebrow">{t('A few good places to start')}</p><h2>{t('Stitched for')}<br /><em>{t('your kind of day.')}</em></h2></div><p className="section-intro">{t('From the ease of everyday cotton to a little extra detail for the celebrations that stay with you.')}</p></div><div className="product-grid">{featuredProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd} />)}</div><Link className="text-link all-suits-link" to="/shop">{t('Explore 50 stitched designs in five colors')} <ArrowRight size={15} /></Link></section>
+      <section className="featured section-wrap"><div className="section-heading"><div><p className="eyebrow">{t('A few good places to start')}</p><h2>{t('Stitched for')}<br /><em>{t('your kind of day.')}</em></h2></div><p className="section-intro">{t('From the ease of everyday cotton to a little extra detail for the celebrations that stay with you.')}</p></div><div className="product-grid">{featuredProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd} />)}</div><Link className="text-link all-suits-link" to="/shop">{t('Explore 100 Pakistani designs in five colors')} <ArrowRight size={15} /></Link></section>
       <section className="home-craft"><div className="home-craft-photo" role="img" aria-label={t('Pakistani man wearing traditional charcoal shalwar kameez')} /><div className="home-craft-copy"><p className="eyebrow">{t('The hand behind the stitch')}</p><h2>{t('Everyday ease.')}<br /><em>{t('Considered detail.')}</em></h2><p>{t('We believe a good kameez is felt before it is noticed: in its drape, the ease of its cut, and the care in every finish.')}</p><Link className="text-link" to="/about">{t('About us')} <ArrowRight size={15} /></Link></div></section>
     </>
   )
