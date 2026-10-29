@@ -3,10 +3,10 @@ import type { FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { ArrowLeft, ArrowRight, Check, CreditCard, Headset, LogOut, Package, Plus, RefreshCw, Scissors, Settings, ShieldCheck, ShoppingBag, Users, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import type { CustomerProfile, FittingRequest, PaymentMethod, Product, StoreOrder, SupportConversation, SupportMessage } from './types'
+import type { CustomerProfile, FittingRequest, PaymentMethod, Product, StoreContact, StoreOrder, SupportConversation, SupportMessage } from './types'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { readApiResponse } from './lib/api-response'
-import { getLocalAdminSnapshot, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalRequests, writeLocalWhatsAppNumber } from './lib/admin-store'
+import { getLocalAdminSnapshot, readLocalProducts, readLocalRequests, readLocalWhatsAppNumber, subscribeToLocalAdminData, writeLocalRequests } from './lib/admin-store'
 import { LocalizedContent } from './locale'
 import LanguageSwitcher from './LanguageSwitcher'
 import './Admin.css'
@@ -20,6 +20,7 @@ type AdminSupportResponse = { conversations?: SupportConversation[]; messages?: 
 type AdminProductsResponse = { products?: Product[]; product?: Product; error?: string }
 type AdminOrdersResponse = { orders?: StoreOrder[]; order?: StoreOrder; error?: string }
 type AdminPaymentMethodsResponse = { methods?: PaymentMethod[]; error?: string }
+type AdminStoreContactResponse = { contact?: StoreContact; error?: string }
 type ProductDraft = {
   id: string
   name: string
@@ -46,6 +47,30 @@ const emptyDraft: ProductDraft = {
   tag: '',
   colorwaysText: 'Charcoal: #4c4b49\nIvory: #e9e1d2\nIndigo: #3b506f\nDeep Plum: #704254\nBlack: #252321',
   active: true,
+}
+
+const emptyStoreContact: StoreContact = {
+  address: '',
+  phone: '',
+  whatsapp: '',
+  email: '',
+  mapUrl: '',
+}
+
+function validStoreContact(contact: StoreContact) {
+  if (contact.address.length > 300 || contact.phone.length > 40 || contact.email.length > 254 || contact.mapUrl.length > 2000) return false
+  const whatsappDigits = contact.whatsapp.replace(/\D/g, '')
+  if (contact.whatsapp && (whatsappDigits.length < 8 || whatsappDigits.length > 15)) return false
+  if (contact.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) return false
+  if (contact.mapUrl) {
+    try {
+      const url = new URL(contact.mapUrl)
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return false
+    } catch {
+      return false
+    }
+  }
+  return true
 }
 
 const money = new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', maximumFractionDigits: 0 })
@@ -120,6 +145,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
     { id: 'easypaisa', enabled: false, instructions: '', accountName: '', accountNumber: '' },
     { id: 'jazzcash', enabled: false, instructions: '', accountName: '', accountNumber: '' },
   ])
+  const [storeContact, setStoreContact] = useState<StoreContact>(emptyStoreContact)
   const [customerLoadError, setCustomerLoadError] = useState('')
   const [selectedConversationId, setSelectedConversationId] = useState(() => searchParams.get('conversation') ?? '')
   const [reply, setReply] = useState('')
@@ -138,7 +164,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
   const requests = localMode ? localSnapshot.requests : storedRequests
   const conversations = storedConversations
   const supportMessages = storedSupportMessages
-  const whatsAppNumber = whatsAppDraft ?? (localMode ? localSnapshot.whatsappNumber : storedWhatsAppNumber)
+  const whatsAppNumber = whatsAppDraft ?? (localMode ? storeContact.whatsapp || storedWhatsAppNumber || localSnapshot.whatsappNumber : storedWhatsAppNumber)
 
   useEffect(() => {
     if (!editorOpen) return
@@ -208,17 +234,22 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         }
         setProducts(loadedProducts)
         setRequests(readLocalRequests())
-        setWhatsAppNumber(readLocalWhatsAppNumber())
-        const [paymentResponse, ordersResponse] = await Promise.all([
+        const [paymentResponse, ordersResponse, contactResponse] = await Promise.all([
           fetch('/api/admin/payment-methods'),
           fetch('/api/admin/orders'),
+          fetch('/api/admin/store-contact'),
         ])
         const paymentResult = await readApiResponse<AdminPaymentMethodsResponse>(paymentResponse)
         const ordersResult = await readApiResponse<AdminOrdersResponse>(ordersResponse)
+        const contactResult = await readApiResponse<AdminStoreContactResponse>(contactResponse)
         if (!paymentResponse.ok) throw new Error(paymentResult.error ?? 'Could not load payment settings.')
         if (!ordersResponse.ok) throw new Error(ordersResult.error ?? 'Could not load customer orders.')
+        if (!contactResponse.ok) throw new Error(contactResult.error ?? 'Could not load shop contact settings.')
         setPaymentMethods(paymentResult.methods ?? [])
         setOrders(ordersResult.orders ?? [])
+        const loadedContact = contactResult.contact ?? emptyStoreContact
+        setStoreContact(loadedContact)
+        setWhatsAppNumber(loadedContact.whatsapp || readLocalWhatsAppNumber())
         const supportResponse = await fetch('/api/admin/support')
         const supportResult = await readApiResponse<AdminSupportResponse>(supportResponse)
         if (!supportResponse.ok) throw new Error(supportResult.error ?? 'Could not load customer conversations.')
@@ -241,12 +272,13 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         return
       }
       if (!supabase) return
-      const [productResult, requestResult, conversationResult, messageResult, settingsResult, customerResult] = await Promise.all([
+      const [productResult, requestResult, conversationResult, messageResult, settingsResult, contactResult, customerResult] = await Promise.all([
         supabase.from('products').select('*').order('name'),
         supabase.from('fitting_requests').select('*').order('created_at', { ascending: false }),
         supabase.from('support_conversations').select('*').order('updated_at', { ascending: false }),
         supabase.from('support_messages').select('*').order('created_at'),
         supabase.from('business_settings').select('value').eq('key', 'whatsapp_number').maybeSingle(),
+        supabase.from('business_settings').select('value').eq('key', 'store_contact').maybeSingle(),
         supabase.from('customer_profiles').select('id,email,full_name,created_at').order('created_at', { ascending: false }),
       ])
       let directoryError = ''
@@ -278,7 +310,7 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
       }
       setCustomerProfiles([...customerDirectory.values()].sort((a, b) => b.created_at.localeCompare(a.created_at)))
       setCustomerLoadError([customerResult.error?.message, directoryError].filter(Boolean).join(' · '))
-      const loadError = productResult.error ?? requestResult.error ?? conversationResult.error ?? messageResult.error ?? settingsResult.error
+      const loadError = productResult.error ?? requestResult.error ?? conversationResult.error ?? messageResult.error ?? settingsResult.error ?? contactResult.error
       if (loadError) {
         setError(loadError.message)
       } else {
@@ -287,6 +319,17 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
         setConversations((conversationResult.data ?? []) as SupportConversation[])
         setSupportMessages((messageResult.data ?? []) as SupportMessage[])
         setWhatsAppNumber(settingsResult.data?.value ?? '')
+        if (contactResult.data?.value) {
+          const parsedContact: unknown = JSON.parse(contactResult.data.value)
+          if (!parsedContact || typeof parsedContact !== 'object'
+            || !['address', 'phone', 'whatsapp', 'email', 'mapUrl'].every((field) => typeof (parsedContact as Record<string, unknown>)[field] === 'string')) {
+            throw new Error('Shop contact settings are invalid.')
+          }
+          setStoreContact(parsedContact as StoreContact)
+          setWhatsAppNumber((parsedContact as StoreContact).whatsapp)
+        } else {
+          setStoreContact(emptyStoreContact)
+        }
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load admin data.')
@@ -705,26 +748,76 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
       setError('Enter a WhatsApp number with its country code, using 8 to 15 digits.')
       return
     }
+    if (!validStoreContact({ ...storeContact, whatsapp: number })) {
+      setError('Check the shop address, phone, WhatsApp number, email, and map link.')
+      return
+    }
     setSaving(true)
     setError('')
     setNotice('')
     try {
       if (localMode) {
-        writeLocalWhatsAppNumber(number)
+        const response = await fetch('/api/admin/store-contact', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact: { ...storeContact, whatsapp: number } }),
+        })
+        const result = await readApiResponse<AdminStoreContactResponse>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not save customer service settings.')
+        if (!result.contact) throw new Error('The account service did not confirm the customer service settings.')
+        setStoreContact(result.contact)
       } else {
         if (!supabase) return
-        const { error: saveError } = await supabase.from('business_settings').upsert({
-          key: 'whatsapp_number',
-          value: number,
-          updated_at: new Date().toISOString(),
-        })
+        const { error: saveError } = await supabase.from('business_settings').upsert([
+          { key: 'whatsapp_number', value: number, updated_at: new Date().toISOString() },
+          { key: 'store_contact', value: JSON.stringify({ ...storeContact, whatsapp: number }), updated_at: new Date().toISOString() },
+        ])
         if (saveError) throw saveError
+        setStoreContact((current) => ({ ...current, whatsapp: number }))
       }
       setWhatsAppNumber(number)
       setWhatsAppDraft(null)
       setNotice('Customer service settings saved.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save customer service settings.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveStoreContact(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!validStoreContact(storeContact)) {
+      setError('Check the shop address, phone, WhatsApp number, email, and map link.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      if (localMode) {
+        const response = await fetch('/api/admin/store-contact', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact: storeContact }),
+        })
+        const result = await readApiResponse<AdminStoreContactResponse>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not save shop contact details.')
+        if (!result.contact) throw new Error('The account service did not confirm the shop contact details.')
+        setStoreContact(result.contact)
+        setWhatsAppNumber(result.contact.whatsapp)
+      } else {
+        if (!supabase) return
+        const { error: saveError } = await supabase.from('business_settings').upsert([
+          { key: 'store_contact', value: JSON.stringify(storeContact), updated_at: new Date().toISOString() },
+          { key: 'whatsapp_number', value: storeContact.whatsapp, updated_at: new Date().toISOString() },
+        ])
+        if (saveError) throw saveError
+      }
+      setWhatsAppNumber(storeContact.whatsapp)
+      setNotice('Shop contact details saved. They are now visible on the About us page.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save shop contact details.')
     } finally {
       setSaving(false)
     }
@@ -994,9 +1087,23 @@ export default function AdminPage({ starterProducts }: { starterProducts: Produc
                 <div className="admin-form-actions"><button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save customer service settings'}</button></div>
               </div>
             </form>
+            <form className="admin-panel admin-settings-panel" onSubmit={saveStoreContact}>
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Storefront</p><h2>About us and shop contact</h2></div></div>
+              <div className="admin-settings-content">
+                <p>These details appear publicly on the About us page. Add your shop address, contact numbers, email, and a Google Maps or pinned location link.</p>
+                <label>Shop address<textarea rows={3} maxLength={300} value={storeContact.address} onChange={(event) => setStoreContact((current) => ({ ...current, address: event.target.value }))} placeholder="Shop number, street, area, city" /></label>
+                <div className="admin-payment-fields">
+                  <label>Contact phone<input type="tel" autoComplete="tel" maxLength={40} value={storeContact.phone} onChange={(event) => setStoreContact((current) => ({ ...current, phone: event.target.value }))} placeholder="+92 300 1234567" /></label>
+                  <label>WhatsApp number<input type="tel" inputMode="tel" maxLength={25} value={storeContact.whatsapp} onChange={(event) => setStoreContact((current) => ({ ...current, whatsapp: event.target.value }))} placeholder="923001234567" /></label>
+                </div>
+                <label>Contact email<input type="email" autoComplete="email" maxLength={254} value={storeContact.email} onChange={(event) => setStoreContact((current) => ({ ...current, email: event.target.value }))} placeholder="hello@example.com" /></label>
+                <label>Google Maps / pinned map link<input type="url" inputMode="url" maxLength={2000} value={storeContact.mapUrl} onChange={(event) => setStoreContact((current) => ({ ...current, mapUrl: event.target.value }))} placeholder="https://maps.app.goo.gl/..." /></label>
+                <div className="admin-form-actions"><button className="admin-primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save shop details'}</button></div>
+              </div>
+            </form>
             <div className="admin-panel admin-settings-panel">
               <div className="admin-panel-heading"><div><p className="admin-kicker">Data and live updates</p><h2>{localMode ? 'SQLite accounts and support chat' : 'Supabase live mode'}</h2></div></div>
-              <div className="admin-settings-content"><p>{localMode ? 'Customer registrations, manager sessions, and customer conversations are stored in the account service SQLite database. Product edits, fitting requests, and WhatsApp settings remain saved in this browser.' : 'Live chat, catalog changes, and appointment updates are synchronized through Supabase Realtime. The self-hosted account database remains available for website customer registrations.'}</p></div>
+              <div className="admin-settings-content"><p>{localMode ? 'Customer registrations, manager sessions, customer conversations, shop contact details, and WhatsApp number are stored in the account service SQLite database. Product edits and fitting requests remain saved in this browser.' : 'Live chat, catalog changes, appointment updates, and shop contact details are synchronized through Supabase Realtime. The self-hosted account database remains available for website customer registrations.'}</p></div>
             </div>
           </section>
         )}

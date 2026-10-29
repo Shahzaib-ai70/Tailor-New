@@ -421,6 +421,45 @@ export function createAccountApp({
     return saved ? JSON.parse(saved.value) : paymentMethodDefaults
   }
 
+  const emptyStoreContact = {
+    address: '',
+    phone: '',
+    whatsapp: '',
+    email: '',
+    mapUrl: '',
+  }
+
+  function readStoreContact() {
+    const saved = database.prepare("SELECT value FROM business_settings WHERE key = 'store_contact'").get()
+    return saved ? JSON.parse(saved.value) : emptyStoreContact
+  }
+
+  function validateStoreContact(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const contact = {}
+    for (const field of Object.keys(emptyStoreContact)) {
+      if (typeof value[field] !== 'string') return null
+      contact[field] = value[field].trim()
+    }
+    if (contact.address.length > 300
+      || contact.phone.length > 40
+      || contact.whatsapp.replace(/\D/g, '').length > 15
+      || (contact.whatsapp && contact.whatsapp.replace(/\D/g, '').length < 8)
+      || contact.email.length > 254
+      || (contact.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email))
+      || contact.mapUrl.length > 2000) return null
+    if (contact.mapUrl) {
+      try {
+        const mapUrl = new URL(contact.mapUrl)
+        if (!['http:', 'https:'].includes(mapUrl.protocol) || mapUrl.username || mapUrl.password) return null
+      } catch {
+        return null
+      }
+    }
+    contact.whatsapp = contact.whatsapp.replace(/\D/g, '')
+    return contact
+  }
+
   function validatePaymentMethods(value) {
     if (!Array.isArray(value) || value.length !== paymentMethodDefaults.length) return null
     const methods = new Map(value.map((method) => [method?.id, method]))
@@ -842,7 +881,7 @@ export function createAccountApp({
     response.json({ customers })
   })
 
-  app.use(['/api/admin/payment-methods', '/api/admin/orders'], (request, response, next) => {
+  app.use(['/api/admin/payment-methods', '/api/admin/store-contact', '/api/admin/orders'], (request, response, next) => {
     if (!getAdminSession(request, response)) {
       response.status(401).json({ error: 'Manager sign-in is required to manage payment settings and orders.' })
       return
@@ -866,6 +905,33 @@ export function createAccountApp({
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(JSON.stringify(methods), new Date().toISOString())
     response.json({ methods })
+  })
+
+  app.get('/api/store-contact', (_request, response) => {
+    response.json({ contact: readStoreContact() })
+  })
+
+  app.get('/api/admin/store-contact', (_request, response) => {
+    response.json({ contact: readStoreContact() })
+  })
+
+  app.put('/api/admin/store-contact', allowSameOrigin, (request, response) => {
+    const contact = validateStoreContact(request.body?.contact)
+    if (!contact) {
+      response.status(400).json({ error: 'Check the shop address, phone, WhatsApp number, email, and map link.' })
+      return
+    }
+    database.prepare(`
+      INSERT INTO business_settings (key, value, updated_at)
+      VALUES ('store_contact', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(JSON.stringify(contact), new Date().toISOString())
+    database.prepare(`
+      INSERT INTO business_settings (key, value, updated_at)
+      VALUES ('whatsapp_number', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(contact.whatsapp, new Date().toISOString())
+    response.json({ contact })
   })
 
   app.get('/api/admin/orders', (_request, response) => {

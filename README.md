@@ -9,7 +9,7 @@ A responsive storefront prototype for Pakistani men's shalwar kameez, built with
 - `/shop/:productId` individual design details and size selection
 - `/checkout` delivery details, order summary, and available payment methods
 - `/payment/:orderId` order confirmation and payment instructions
-- `/craft` stitching and design approach
+- `/about` brand story, shop address, contact details, and map link
 - `/fitting` appointment request form
 - `/account` customer registration and sign-in, backed by the self-hosted account API
 
@@ -37,7 +37,7 @@ Open `/admin` and sign in with the manager username and password configured for 
 
 Set `ADMIN_USERNAME` and a unique `ADMIN_PASSWORD` of at least 12 characters that is different from the username in the account API environment before starting it. `AUTH_DB_PATH` defaults to `./data/accounts.sqlite`; the database file is excluded from Git, so back it up and keep it on persistent storage. With Supabase unset, the product catalog, customer support conversations, chat read state, orders, and payment settings are stored in SQLite. The Admin migrates the existing browser catalog into SQLite on first load; subsequent product additions, edits, and visibility changes are shared with the storefront. Signed-in customers see their own account conversation across devices; guest chats use a private browser session. Fitting requests and WhatsApp settings remain browser-local.
 
-The Admin Orders section lists submitted orders and lets managers update order status. In Admin Settings, configure the payment methods customers can choose at checkout. Bank transfer, Easypaisa, and JazzCash show the instructions and account details entered there. Card checkout only redirects to a hosted payment page when a valid HTTPS checkout URL is configured; payment processing and confirmation must be provided by that payment provider.
+The Admin Orders section lists submitted orders and lets managers update order status. In Admin Settings, configure the payment methods customers can choose at checkout. Bank transfer, Easypaisa, and JazzCash show the instructions and account details entered there. Card checkout only redirects to a hosted payment page when a valid HTTPS checkout URL is configured; payment processing and confirmation must be provided by that payment provider. The About us and shop contact settings let managers publish the shop address, phone, WhatsApp number, email, and map link to every visitor. In SQLite mode these details are stored in the account service database; in Supabase mode they are stored in the `business_settings` table. Apply the updated `supabase/schema.sql` to existing Supabase projects to allow public storefront reads of the shop contact setting.
 
 ### VPS account API deployment
 

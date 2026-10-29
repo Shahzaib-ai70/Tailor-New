@@ -334,6 +334,47 @@ test('checkout uses admin-configured payments, calculates prices on the server, 
   assert.equal(updated.paymentStatus, 'paid')
 })
 
+test('shop contact details are public to read and manager-only to update', async () => {
+  const unauthenticated = await fetch(`${origin}/api/admin/store-contact`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ contact: { address: '1 Main Street', phone: '', whatsapp: '', email: '', mapUrl: '' } }),
+  })
+  assert.equal(unauthenticated.status, 401)
+
+  const login = await fetch(`${origin}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ username: 'ShahzaibKS', password: 'a-manager-password' }),
+  })
+  const adminCookie = login.headers.get('set-cookie').split(';')[0]
+  const contact = {
+    address: 'Shop 4, Main Road, Lahore',
+    phone: '+92 42 1234567',
+    whatsapp: '+92 300 1234567',
+    email: 'shop@example.com',
+    mapUrl: 'https://maps.app.goo.gl/example',
+  }
+  const saved = await fetch(`${origin}/api/admin/store-contact`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ contact }),
+  })
+  assert.equal(saved.status, 200)
+  assert.deepEqual((await saved.json()).contact, { ...contact, whatsapp: '923001234567' })
+
+  const publicContact = await fetch(`${origin}/api/store-contact`)
+  assert.equal(publicContact.status, 200)
+  assert.deepEqual((await publicContact.json()).contact, { ...contact, whatsapp: '923001234567' })
+
+  const unsafeMapLink = await fetch(`${origin}/api/admin/store-contact`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: adminCookie },
+    body: JSON.stringify({ contact: { ...contact, mapUrl: 'javascript:alert(1)' } }),
+  })
+  assert.equal(unsafeMapLink.status, 400)
+})
+
 test('manager login reports missing SQL admin credentials as a setup error', async () => {
   const missingConfigDirectory = mkdtempSync(join(tmpdir(), 'mian-admin-config-test-'))
   const unconfigured = createAccountApp({

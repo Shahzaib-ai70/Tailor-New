@@ -231,7 +231,7 @@ create policy "Customers and admins can send support messages"
 drop policy if exists "Visitors can view business settings" on public.business_settings;
 create policy "Visitors can view business settings"
   on public.business_settings for select to anon, authenticated
-  using (key = 'whatsapp_number');
+  using (key in ('whatsapp_number', 'store_contact'));
 
 drop policy if exists "Admins can manage business settings" on public.business_settings;
 create policy "Admins can manage business settings"

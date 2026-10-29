@@ -37,14 +37,26 @@ export default function SupportWidget() {
 
   useEffect(() => {
     if (localMode) {
+      let active = true
+      void fetch('/api/store-contact').then(async (response) => {
+        const result = await readApiResponse<{ contact?: { whatsapp?: string }; error?: string }>(response)
+        if (!response.ok) throw new Error(result.error ?? 'Could not load WhatsApp contact settings.')
+        if (active) setWhatsAppNumber(result.contact?.whatsapp ?? '')
+      }).catch((settingsError: unknown) => {
+        if (active) setError(settingsError instanceof Error ? settingsError.message : 'Could not load WhatsApp contact settings.')
+      })
       const unsubscribe = subscribeToLocalAdminData(() => {
         try {
-          setWhatsAppNumber(readLocalWhatsAppNumber())
+          const savedNumber = readLocalWhatsAppNumber()
+          if (savedNumber) setWhatsAppNumber(savedNumber)
         } catch (syncError) {
           setError(syncError instanceof Error ? syncError.message : 'Could not refresh support messages.')
         }
       })
-      return unsubscribe
+      return () => {
+        active = false
+        unsubscribe()
+      }
     }
 
     const client = customerChatSupabase

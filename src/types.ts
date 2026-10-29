@@ -54,6 +54,14 @@ export type CustomerProfile = {
   created_at: string
 }
 
+export type StoreContact = {
+  address: string
+  phone: string
+  whatsapp: string
+  email: string
+  mapUrl: string
+}
+
 export type PaymentMethodId = 'card' | 'bank_transfer' | 'easypaisa' | 'jazzcash'
 
 export type PaymentMethod = {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowDown, ArrowRight, ArrowUpRight, Check, Menu, Minus, Plus, ShoppingBag, UserRound, X } from 'lucide-react'
-import type { CartLine, Colorway, Product } from './types'
+import { ArrowDown, ArrowRight, ArrowUpRight, Check, Mail, MapPin, Menu, Minus, Phone, Plus, ShoppingBag, UserRound, X } from 'lucide-react'
+import type { CartLine, Colorway, Product, StoreContact } from './types'
 import { supabase } from './lib/supabase'
 import { readLocalRequests, writeLocalRequests } from './lib/admin-store'
 import { readApiResponse } from './lib/api-response'
@@ -192,7 +192,7 @@ function HomePage({ catalog, onAdd }: { catalog: Product[]; onAdd: (product: Pro
       </section>
       <section className="trust-strip" aria-label={t('Our promise')}><span>{t('Pakistani design sensibility')}</span><i /><span>{t('Comfort-first cottons')}</span><i /><span>{t('Careful finishing')}</span><i /><span>{t('Made for your moments')}</span></section>
       <section className="featured section-wrap"><div className="section-heading"><div><p className="eyebrow">{t('A few good places to start')}</p><h2>{t('Stitched for')}<br /><em>{t('your kind of day.')}</em></h2></div><p className="section-intro">{t('From the ease of everyday cotton to a little extra detail for the celebrations that stay with you.')}</p></div><div className="product-grid">{featuredProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd} />)}</div><Link className="text-link all-suits-link" to="/shop">{t('Explore 50 stitched designs in five colors')} <ArrowRight size={15} /></Link></section>
-      <section className="home-craft"><div className="home-craft-photo" role="img" aria-label={t('Pakistani man wearing traditional charcoal shalwar kameez')} /><div className="home-craft-copy"><p className="eyebrow">{t('The hand behind the stitch')}</p><h2>{t('Everyday ease.')}<br /><em>{t('Considered detail.')}</em></h2><p>{t('We believe a good kameez is felt before it is noticed: in its drape, the ease of its cut, and the care in every finish.')}</p><Link className="text-link" to="/craft">{t('Meet the craft')} <ArrowRight size={15} /></Link></div></section>
+      <section className="home-craft"><div className="home-craft-photo" role="img" aria-label={t('Pakistani man wearing traditional charcoal shalwar kameez')} /><div className="home-craft-copy"><p className="eyebrow">{t('The hand behind the stitch')}</p><h2>{t('Everyday ease.')}<br /><em>{t('Considered detail.')}</em></h2><p>{t('We believe a good kameez is felt before it is noticed: in its drape, the ease of its cut, and the care in every finish.')}</p><Link className="text-link" to="/about">{t('About us')} <ArrowRight size={15} /></Link></div></section>
     </>
   )
 }
@@ -226,13 +226,68 @@ function ProductPage({ catalog, onAdd }: { catalog: Product[]; onAdd: (product: 
   )
 }
 
-function CraftPage() {
+const emptyStoreContact: StoreContact = { address: '', phone: '', whatsapp: '', email: '', mapUrl: '' }
+
+function validMapLink(value: string) {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function AboutPage() {
   const { t } = useLocale()
+  const [contact, setContact] = useState(emptyStoreContact)
+  const [contactError, setContactError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    async function loadContact() {
+      try {
+        let nextContact: StoreContact
+        if (supabase) {
+          const { data, error } = await supabase.from('business_settings').select('value').eq('key', 'store_contact').maybeSingle()
+          if (error) throw error
+          const parsed: unknown = data?.value ? JSON.parse(data.value) : emptyStoreContact
+          if (!parsed || typeof parsed !== 'object'
+            || !['address', 'phone', 'whatsapp', 'email', 'mapUrl'].every((field) => typeof (parsed as Record<string, unknown>)[field] === 'string')) {
+            throw new Error('Shop contact settings are invalid.')
+          }
+          nextContact = parsed as StoreContact
+        } else {
+          const response = await fetch('/api/store-contact')
+          const result = await readApiResponse<{ contact?: StoreContact; error?: string }>(response)
+          if (!response.ok) throw new Error(result.error ?? 'Could not load shop contact details.')
+          nextContact = result.contact ?? emptyStoreContact
+        }
+        if (active) setContact(nextContact)
+      } catch (loadError) {
+        if (active) setContactError(loadError instanceof Error ? loadError.message : 'Could not load shop contact details.')
+      }
+    }
+    void loadContact()
+    return () => { active = false }
+  }, [])
+
+  const whatsappLink = contact.whatsapp.replace(/\D/g, '')
+  const mapLink = validMapLink(contact.mapUrl)
   return (
-    <section className="story-page">
-      <div className="story-hero"><div className="story-hero-copy"><p className="eyebrow">{t('Our approach')}</p><h1>{t('Rooted in tradition.')}<br /><em>{t('Made for now.')}</em></h1><p>{t('Clothes that carry a little of home, wherever the day takes you.')}</p></div><div className="story-hero-image" role="img" aria-label={t('A man in black Pakistani shalwar kameez outdoors')} /></div>
-      <div className="craft-story section-wrap"><div><p className="eyebrow">{t('The details matter')}</p><h2>{t('Good fabric.')}<br /><em>{t('Thoughtful stitching.')}</em></h2></div><div><p>{t('Shalwar kameez is a living wardrobe: generous in movement, versatile in how it is worn, and rich with regional character. We take that familiar form seriously.')}</p><p>{t('Each design begins with the way it should feel. Then we choose breathable cloth, shape a comfortable silhouette, and finish the collar, placket, and cuffs with intention.')}</p><Link className="text-link" to="/shop">{t('Browse stitched designs')} <ArrowRight size={15} /></Link></div></div>
-      <div className="craft-values"><article><span>01</span><h3>{t('Comfort first')}</h3><p>{t('Room to move, breathable fabrics, and cuts that work with your day.')}</p></article><article><span>02</span><h3>{t('Stitch with purpose')}</h3><p>{t('Clean plackets, considered collars, and small details that feel personal.')}</p></article><article><span>03</span><h3>{t('Wear it often')}</h3><p>{t('Versatile pieces for everyday visits, Friday prayers, Eid, and family gatherings.')}</p></article></div>
+    <section className="about-page">
+      <div className="story-hero"><div className="story-hero-copy"><p className="eyebrow">{t('About Mian Tailor And Design')}</p><h1>{t('Rooted in tradition.')}<br /><em>{t('Made for now.')}</em></h1><p>{t('We create Pakistani shalwar kameez with thoughtful fabrics, distinctive stitching, and a comfortable fit for everyday life and special occasions.')}</p></div><div className="story-hero-image" role="img" aria-label={t('A man in black Pakistani shalwar kameez outdoors')} /></div>
+      <div className="about-story craft-story section-wrap"><div><p className="eyebrow">{t('Our approach')}</p><h2>{t('Good fabric.')}<br /><em>{t('Thoughtful stitching.')}</em></h2></div><div><p>{t('Shalwar kameez is a living wardrobe: generous in movement, versatile in how it is worn, and rich with regional character. We take that familiar form seriously.')}</p><p>{t('Each design begins with the way it should feel. Then we choose breathable cloth, shape a comfortable silhouette, and finish the collar, placket, and cuffs with intention.')}</p><Link className="text-link" to="/shop">{t('Browse stitched designs')} <ArrowRight size={15} /></Link></div></div>
+      <section className="about-contact section-wrap" aria-labelledby="about-contact-title">
+        <div className="about-contact-heading"><p className="eyebrow">{t('Visit or get in touch')}</p><h2 id="about-contact-title">{t('We would love to hear from you.')}</h2></div>
+        {contactError && <p className="catalog-error" role="alert">{t('Could not load shop contact details: ')}{contactError}</p>}
+        <div className="about-contact-grid">
+          {(contact.address || mapLink) && <article className="about-contact-card"><MapPin size={20} /><div><h3>{t('Shop address')}</h3>{contact.address && <p>{contact.address}</p>}{mapLink && <a className="text-link" href={mapLink} target="_blank" rel="noopener noreferrer">{t('Open map directions')} <ArrowUpRight size={14} /></a>}</div></article>}
+          {contact.phone && <article className="about-contact-card"><Phone size={20} /><div><h3>{t('Call us')}</h3><a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`}>{contact.phone}</a></div></article>}
+          {whatsappLink && <article className="about-contact-card"><Phone size={20} /><div><h3>{t('WhatsApp')}</h3><a href={`https://wa.me/${whatsappLink}`} target="_blank" rel="noopener noreferrer">{contact.whatsapp}</a></div></article>}
+          {contact.email && <article className="about-contact-card"><Mail size={20} /><div><h3>{t('Email us')}</h3><a href={`mailto:${contact.email}`}>{contact.email}</a></div></article>}
+          {!contact.address && !mapLink && !contact.phone && !whatsappLink && !contact.email && !contactError && <p className="about-contact-empty">{t('Our shop contact details will be shared here soon. Please check back soon.')}</p>}
+        </div>
+      </section>
     </section>
   )
 }
@@ -418,8 +473,8 @@ function App() {
 
   return (
     <div className="storefront">
-      <header className="site-header"><Link className="wordmark" to="/" aria-label={t('Mian Tailor And Design home')}><span className="wordmark-mark" aria-hidden="true"><span>M</span><i /></span><span className="wordmark-name">MIAN <i>TAILOR AND DESIGN</i></span></Link><button className="mobile-menu-toggle" type="button" onClick={() => setMenuOpen((open) => !open)} aria-label={t(menuOpen ? 'Close navigation' : 'Open navigation')}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'} aria-label={t('Main navigation')}><NavLink to="/" end onClick={() => setMenuOpen(false)}>{t('Home')}</NavLink><NavLink to="/shop" onClick={() => setMenuOpen(false)}>{t('Shop')}</NavLink><NavLink to="/craft" onClick={() => setMenuOpen(false)}>{t('Our craft')}</NavLink><NavLink to="/fitting" onClick={() => setMenuOpen(false)}>{t('Book a fitting')}</NavLink></nav><div className="header-actions"><LanguageSwitcher /><Link className="account-link" to="/account" aria-label={t('Sign in or register')}><UserRound size={17} strokeWidth={1.6} /><span>{t('Account')}</span></Link><button className="bag-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t('Open shopping bag, ')}${itemCount}${t(' items')}`}><ShoppingBag size={18} strokeWidth={1.6} /><span>{t('Bag')}</span><span className="bag-count">{itemCount}</span></button></div></header>
-      <main>{catalogLoadError && <p className="catalog-error" role="alert">{t('Could not load the latest collection: ')}{catalogLoadError}</p>}{cartStorageError && <p className="catalog-error" role="alert">{t(cartStorageError)}</p>}<Routes><Route path="/" element={<HomePage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop" element={<ShopPage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop/:productId" element={<ProductPage catalog={catalog} onAdd={addToCart} />} /><Route path="/craft" element={<CraftPage />} /><Route path="/fitting" element={<FittingPage />} /><Route path="/account" element={<AccountPage />} /><Route path="/checkout" element={<CheckoutPage cart={cart} subtotal={subtotal} onOrderPlaced={clearCart} />} /><Route path="/payment/:orderId" element={<PaymentPage />} /><Route path="*" element={<NotFoundPage />} /></Routes></main>
+      <header className="site-header"><Link className="wordmark" to="/" aria-label={t('Mian Tailor And Design home')}><span className="wordmark-mark" aria-hidden="true"><span>M</span><i /></span><span className="wordmark-name">MIAN <i>TAILOR AND DESIGN</i></span></Link><button className="mobile-menu-toggle" type="button" onClick={() => setMenuOpen((open) => !open)} aria-label={t(menuOpen ? 'Close navigation' : 'Open navigation')}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'} aria-label={t('Main navigation')}><NavLink to="/" end onClick={() => setMenuOpen(false)}>{t('Home')}</NavLink><NavLink to="/shop" onClick={() => setMenuOpen(false)}>{t('Shop')}</NavLink><NavLink to="/about" onClick={() => setMenuOpen(false)}>{t('About us')}</NavLink><NavLink to="/fitting" onClick={() => setMenuOpen(false)}>{t('Book a fitting')}</NavLink></nav><div className="header-actions"><LanguageSwitcher /><Link className="account-link" to="/account" aria-label={t('Sign in or register')}><UserRound size={17} strokeWidth={1.6} /><span>{t('Account')}</span></Link><button className="bag-button" type="button" onClick={() => setCartOpen(true)} aria-label={`${t('Open shopping bag, ')}${itemCount}${t(' items')}`}><ShoppingBag size={18} strokeWidth={1.6} /><span>{t('Bag')}</span><span className="bag-count">{itemCount}</span></button></div></header>
+      <main>{catalogLoadError && <p className="catalog-error" role="alert">{t('Could not load the latest collection: ')}{catalogLoadError}</p>}{cartStorageError && <p className="catalog-error" role="alert">{t(cartStorageError)}</p>}<Routes><Route path="/" element={<HomePage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop" element={<ShopPage catalog={catalog} onAdd={addToCart} />} /><Route path="/shop/:productId" element={<ProductPage catalog={catalog} onAdd={addToCart} />} /><Route path="/about" element={<AboutPage />} /><Route path="/craft" element={<Navigate to="/about" replace />} /><Route path="/fitting" element={<FittingPage />} /><Route path="/account" element={<AccountPage />} /><Route path="/checkout" element={<CheckoutPage cart={cart} subtotal={subtotal} onOrderPlaced={clearCart} />} /><Route path="/payment/:orderId" element={<PaymentPage />} /><Route path="*" element={<NotFoundPage />} /></Routes></main>
       <footer className="site-footer"><Link className="footer-brand" to="/">MIAN TAILOR AND DESIGN</Link><span>{t('Pakistani craft. Made to wear.')}</span><span>© 2026 Mian Tailor And Design</span></footer>
       {cartOpen && <div className="cart-layer"><button className="cart-backdrop" type="button" onClick={() => setCartOpen(false)} aria-label={t('Close shopping bag')} /><aside className="cart-drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title"><div className="cart-header"><div><p className="eyebrow">{t('Your selection')}</p><h2 id="cart-title">{t('The bag')} <span>({itemCount})</span></h2></div><button className="icon-button" type="button" onClick={() => setCartOpen(false)} aria-label={t('Close bag')}><X size={21} /></button></div>{cart.length === 0 ? <div className="empty-cart"><ShoppingBag size={28} strokeWidth={1.3} /><p>{t('Your next favorite is waiting.')}</p><Link className="text-link" to="/shop" onClick={() => setCartOpen(false)}>{t('Explore the collection')} <ArrowRight size={15} /></Link></div> : <><div className="cart-items">{cart.map((line) => <div className="cart-line" key={`${line.product.id}-${line.colorway.name}-${line.size}`}><img src={line.product.image} alt="" /><div className="cart-line-info"><h3>{t(line.product.name)}</h3><p>{t(line.colorway.name)} · {t('Size ')}{line.size}</p><div className="quantity-control"><button type="button" onClick={() => updateQuantity(line.product.id, line.colorway.name, line.size, -1)} aria-label={`${t('Remove one ')}${t(line.product.name)}`}><Minus size={13} /></button><span>{line.quantity}</span><button type="button" onClick={() => updateQuantity(line.product.id, line.colorway.name, line.size, 1)} aria-label={`${t('Add one ')}${t(line.product.name)}`}><Plus size={13} /></button></div></div><span className="cart-line-price">{money.format(line.product.price * line.quantity)}</span></div>)}</div><div className="cart-summary"><p><span>{t('Subtotal')}</span><strong>{money.format(subtotal)}</strong></p><span className="shipping-note">{t('Delivery charges are confirmed by customer service.')}</span><button className="checkout-button" type="button" onClick={() => { setCartOpen(false); navigate('/checkout') }}>{t('Continue to checkout')} <ArrowRight size={16} /></button><button className="continue-shopping" type="button" onClick={() => setCartOpen(false)}>{t('Continue shopping')}</button></div></>}</aside></div>}
       <SupportWidget />
