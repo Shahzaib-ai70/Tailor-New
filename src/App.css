@@ -31,7 +31,7 @@
 .hero-footnote { width: 100%; margin-top: auto; display: flex; justify-content: space-between; color: #777268; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
 .hero-footnote span:last-child { display: flex; align-items: center; gap: 7px; }
 .hero-footnote i { width: 4px; height: 4px; border-radius: 50%; background: var(--moss); }
-.hero-image { position: relative; background: #5d594c url('https://images.unsplash.com/photo-1711216612464-3fde510fa50f?auto=format&fit=crop&w=1800&q=90') center 36% / cover no-repeat; }
+.hero-image { position: relative; background: #5d594c url('/product-photos/blue-shalwar-field.jpg') center 36% / cover no-repeat; }
 .hero-image::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(20, 18, 16, .44), transparent 32%, rgba(20, 18, 16, .08)); }
 .image-note, .hero-caption { position: absolute; z-index: 1; color: white; }
 .image-note { top: 26px; left: 29px; right: 29px; display: flex; justify-content: space-between; font-size: 9px; letter-spacing: .12em; }
@@ -74,7 +74,7 @@
 .text-link { display: inline-flex; align-items: center; gap: 10px; padding: 0 0 5px; border: 0; border-bottom: 1px solid var(--moss); background: none; color: var(--ink); font: inherit; font-size: 11px; text-decoration: none; cursor: pointer; }
 .all-suits-link { margin-top: 37px; }
 .home-craft { min-height: 480px; display: grid; grid-template-columns: 1fr 1fr; background: #e9e4d9; }
-.home-craft-photo { min-height: 480px; background: #4b5044 url('https://images.unsplash.com/photo-1710956446132-832273cd344d?auto=format&fit=crop&w=1300&q=85') center 32% / cover no-repeat; }
+.home-craft-photo { min-height: 480px; background: #4b5044 url('/product-photos/shalwar-waistcoat.jpg') center 32% / cover no-repeat; }
 .home-craft-copy { padding: 78px 12%; display: flex; align-items: flex-start; flex-direction: column; justify-content: center; }
 .home-craft-copy > p:not(.eyebrow) { max-width: 365px; margin: 23px 0 25px; color: #68645b; font-size: 12px; line-height: 1.9; }
 
@@ -125,7 +125,7 @@
 .story-hero-copy { padding: 90px 9% 60px 16%; display: flex; align-items: flex-start; flex-direction: column; justify-content: center; }
 .story-hero h1 { font-size: 65px; }
 .story-hero-copy > p:last-child { max-width: 350px; margin-top: 22px; color: #68645b; font-size: 13px; line-height: 1.8; }
-.story-hero-image { min-height: 530px; background: #484a40 url('https://images.unsplash.com/photo-1710956446132-832273cd344d?auto=format&fit=crop&w=1400&q=85') center 27% / cover no-repeat; }
+.story-hero-image { min-height: 530px; background: #484a40 url('/product-photos/shalwar-waistcoat.jpg') center 27% / cover no-repeat; }
 .craft-story { padding-top: 94px; padding-bottom: 94px; display: grid; grid-template-columns: 1fr 1fr; gap: 10%; }
 .craft-story h2 { font-size: 52px; }
 .craft-story > div:last-child p { margin: 0 0 18px; color: #68645b; font-size: 12px; line-height: 1.9; }

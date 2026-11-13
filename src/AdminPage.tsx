@@ -962,7 +962,17 @@ export default function AdminPage({ starterProducts, legacyStarterProductIds }: 
               <article><span className="admin-stat-icon"><Headset size={18} /></span><p>Live support</p><strong>{conversations.filter((item) => item.status === 'open').length}</strong><small>{supportMessages.length} messages across all chats</small></article>
               <article><span className="admin-stat-icon"><ShoppingBag size={18} /></span><p>Collection value</p><strong>{money.format(products.filter((product) => product.active !== false).reduce((total, product) => total + product.price, 0))}</strong><small>Combined price of active designs</small></article>
             </div>
-            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Start with 100 Pakistani designs</h2><p>Import the original Pakistani shalwar kameez collection {localMode ? 'into this browser' : 'into Supabase'} so you can edit the listings here. The old starter listings will be hidden, not deleted.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
+            {products.length === 0 && (
+              <div className="admin-empty-catalog">
+                <div>
+                  <h2>Start with 10 distinct-photo designs</h2>
+                  <p>Import the original Pakistani shalwar kameez collection {localMode ? 'into this browser' : 'into Supabase'} so you can edit the listings here. Previous starter listings will be hidden, not deleted.</p>
+                </div>
+                <button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>
+                  {saving ? 'Importing…' : 'Import Pakistani collection'}
+                </button>
+              </div>
+            )}
             <div className="admin-panel">
               <div className="admin-panel-heading"><div><p className="admin-kicker">Latest activity</p><h2>Recent fitting requests</h2></div><button className="admin-text-button" type="button" onClick={() => navigateSection('fittings')}>View all <ArrowLeft size={14} /></button></div>
               {requests.length === 0 ? <p className="admin-empty">New fitting requests will appear here.</p> : <div className="admin-request-list">{requests.slice(0, 5).map((request) => <article key={request.id}><div><strong>{request.name}</strong><span>{request.occasion} · {formatAdminDate(request.created_at)}</span></div><span className={`admin-status ${request.status}`}>{request.status}</span></article>)}</div>}
@@ -972,10 +982,10 @@ export default function AdminPage({ starterProducts, legacyStarterProductIds }: 
 
         {section === 'products' && (
           <section className="admin-content">
-            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Your product list is empty</h2><p>Import the 100 Pakistani designs or add a product manually. Previous starter listings will be hidden, not deleted.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
+            {products.length === 0 && <div className="admin-empty-catalog"><div><h2>Your product list is empty</h2><p>Import the 10 distinct-photo designs or add a product manually. Previous starter listings will be hidden, not deleted.</p></div><button className="admin-primary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving}>{saving ? 'Importing…' : 'Import Pakistani collection'}</button></div>}
             <div className="admin-panel">
-              <div className="admin-panel-heading"><div><p className="admin-kicker">Catalog</p><h2>{products.length} products</h2></div><div className="admin-row-actions"><button className="admin-secondary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving} title="Add missing designs and hide only the previous 50 starter listings.">{saving ? 'Importing…' : 'Add 100 Pakistani designs'}</button><button className="admin-primary-button admin-add-button" type="button" onClick={startNewProduct}><Plus size={16} /> Add product</button></div></div>
-              <p className="admin-empty">Import adds missing Pakistani designs and hides the 50 previous starter listings. Those entries and their edits are retained and can be republished.</p>
+              <div className="admin-panel-heading"><div><p className="admin-kicker">Catalog</p><h2>{products.length} products</h2></div><div className="admin-row-actions"><button className="admin-secondary-button" type="button" onClick={() => void importPakistaniCatalog()} disabled={saving} title="Add missing designs and hide previous starter listings without deleting them.">{saving ? 'Importing…' : 'Add 10 distinct designs'}</button><button className="admin-primary-button admin-add-button" type="button" onClick={startNewProduct}><Plus size={16} /> Add product</button></div></div>
+              <p className="admin-empty">Import adds missing Pakistani designs and hides previous starter listings. Those entries and their edits are retained and can be republished.</p>
               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Visibility</th><th>Actions</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}><td><div className="admin-product-cell"><img src={product.image} alt="" /><span><strong>{product.name}</strong><small>{product.id}</small></span></div></td><td>{product.category}</td><td>{money.format(product.price)}</td><td><span className={product.active === false ? 'admin-status inactive' : 'admin-status active'}>{product.active === false ? 'Hidden' : 'Active'}</span></td><td><div className="admin-row-actions"><button className="admin-small-button" type="button" onClick={() => startEditProduct(product)}>Edit</button><button className="admin-small-button" type="button" onClick={() => void toggleProduct(product)}>{product.active === false ? 'Publish' : 'Hide'}</button></div></td></tr>)}</tbody></table></div>
             </div>
             {editorOpen && <div className="admin-product-modal" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditorOpen(false) }}>
